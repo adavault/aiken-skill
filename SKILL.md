@@ -270,7 +270,8 @@ For detailed information, consult:
 - [Security patterns](reference/security.md) — eUTxO attack vectors and mitigations (11 categories)
 - [Auditing methodology](reference/auditing.md) — structured audit process, severity classification, CIP-52 compliance
 - [Standard library](reference/stdlib.md) — key modules and functions
-- [Design patterns](reference/patterns.md) — withdraw-zero trick, UTxO indexers, etc.
+- [Design patterns](reference/patterns.md) — withdraw-zero trick, UTxO indexers, upgrade/migration, etc.
+- [Gotchas](reference/gotchas.md) — compiler pitfalls, type system surprises, testing patterns
 
 ## Examples
 

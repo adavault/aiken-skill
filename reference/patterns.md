@@ -306,3 +306,165 @@ fn validate_delegation(
 
 **Types used in validator signatures must be `pub`** — Aiken enforces that
 types referenced in validator handler parameters are publicly accessible.
+
+## Contract Upgrade / Migration Pattern
+
+**Problem:** Plutus scripts are immutable once deployed. If a vulnerability is
+found or a feature needs adding, you cannot modify the on-chain script. Funds
+locked at the old script address are stuck unless the validator has an upgrade
+path.
+
+**Solution:** Include a `Migrate` redeemer that allows an authorized party to
+move funds from the old contract to a new one. The migration must be tightly
+controlled — it's essentially a backdoor, so security is critical.
+
+### Approach 1: Admin-Authorized Migration
+
+The simplest pattern. An admin key (or multisig) can authorize moving funds to
+any new script address. Fast to implement but centralizes trust.
+
+```aiken
+type VaultRedeemer {
+  Withdraw       // Normal spend
+  Migrate        // Move to new contract version
+}
+
+validator vault_v1(admin: ByteArray) {
+  spend(datum: Option<Datum>, redeemer: VaultRedeemer, _oref: OutputReference, tx: Transaction) {
+    expect Some(d) = datum
+    when redeemer is {
+      Withdraw -> {
+        // Normal validation...
+        list.has(tx.extra_signatories, d.owner)?
+      }
+      Migrate -> {
+        // Only admin can trigger migration
+        list.has(tx.extra_signatories, admin)?
+      }
+    }
+  }
+}
+```
+
+**Trade-off:** Simple, but admin has unilateral power over all locked funds.
+Suitable for early-stage contracts with known, trusted operators.
+
+### Approach 2: Destination-Locked Migration
+
+Migration is restricted to a specific new script hash, baked in as a parameter
+or stored in datum. The admin can trigger migration, but funds can only move
+to the pre-approved destination.
+
+```aiken
+validator vault_v1(admin: ByteArray, upgrade_script_hash: ByteArray) {
+  spend(datum: Option<Datum>, redeemer: VaultRedeemer, oref: OutputReference, tx: Transaction) {
+    expect Some(d) = datum
+    when redeemer is {
+      Withdraw -> list.has(tx.extra_signatories, d.owner)?
+      Migrate -> {
+        // Admin must sign
+        let admin_signed = list.has(tx.extra_signatories, admin)?
+
+        // Funds must go to the approved new script address
+        let new_script_addr = address.from_script(upgrade_script_hash)
+        let funds_to_new_script =
+          list.any(tx.outputs, fn(o) {
+            o.address == new_script_addr
+          })?
+
+        admin_signed && funds_to_new_script
+      }
+    }
+  }
+}
+```
+
+**Trade-off:** Admin cannot steal funds — only redirect to the pre-approved
+script. But the upgrade target must be known at V1 deployment time (or use
+a reference input to look it up dynamically).
+
+### Approach 3: Owner-Initiated Migration
+
+Each user migrates their own funds. No admin key needed. The owner authorizes
+the move and the validator ensures funds go to the new script with equivalent
+datum.
+
+```aiken
+validator vault_v1(new_script_hash: ByteArray) {
+  spend(datum: Option<Datum>, redeemer: VaultRedeemer, oref: OutputReference, tx: Transaction) {
+    expect Some(d) = datum
+    when redeemer is {
+      Withdraw -> list.has(tx.extra_signatories, d.owner)?
+      Migrate -> {
+        // Owner must sign their own migration
+        let owner_signed = list.has(tx.extra_signatories, d.owner)?
+
+        // Funds go to new script
+        let new_script_addr = address.from_script(new_script_hash)
+        let migrated_output =
+          list.any(tx.outputs, fn(o) {
+            o.address == new_script_addr
+          })?
+
+        owner_signed && migrated_output
+      }
+    }
+  }
+}
+```
+
+**Trade-off:** No centralized trust — each user controls their own migration.
+But requires every user to actively migrate, which may take time. Orphaned
+UTxOs at the old script persist indefinitely.
+
+### Approach 4: Reference Input for Upgrade Target
+
+Uses a governance NFT in a reference input to point to the approved upgrade
+script. Allows changing the upgrade target without redeploying V1.
+
+```aiken
+validator vault_v1(governance_nft_policy: ByteArray, governance_nft_name: ByteArray) {
+  spend(datum: Option<Datum>, redeemer: VaultRedeemer, oref: OutputReference, tx: Transaction) {
+    expect Some(d) = datum
+    when redeemer is {
+      Withdraw -> list.has(tx.extra_signatories, d.owner)?
+      Migrate -> {
+        let owner_signed = list.has(tx.extra_signatories, d.owner)?
+
+        // Read upgrade target from governance reference input
+        expect Some(gov_ref) =
+          list.find(tx.reference_inputs, fn(i) {
+            assets.quantity_of(i.output.value, governance_nft_policy, governance_nft_name) == 1
+          })
+        expect InlineDatum(raw) = gov_ref.output.datum
+        expect upgrade_target: ByteArray = raw
+
+        // Funds must go to the governance-approved script
+        let new_script_addr = address.from_script(upgrade_target)
+        let migrated =
+          list.any(tx.outputs, fn(o) {
+            o.address == new_script_addr
+          })?
+
+        owner_signed && migrated
+      }
+    }
+  }
+}
+```
+
+**Trade-off:** Most flexible — upgrade target can change without redeploying.
+But requires governance NFT infrastructure and adds complexity.
+
+### Migration Security Considerations
+
+- **Always require authorization** — never allow unauthenticated migration
+- **Validate the destination** — unbounded migration is indistinguishable from theft
+- **Preserve user funds** — migration output value must be >= input value
+- **Preserve datum** — if the new contract expects similar datum, validate it's carried over
+- **Time-lock migrations** — consider requiring advance notice (e.g., governance vote period)
+  before migration is enabled, so users can withdraw instead
+- **One-way only** — V2 should not automatically trust V1 migration data; V2's mint handler
+  should validate incoming migrated UTxOs independently
+- **Test the migration path** — write explicit tests for the Migrate redeemer, including
+  failure cases (wrong destination, missing signature, insufficient output value)
