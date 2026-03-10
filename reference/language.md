@@ -254,7 +254,7 @@ fn validate_amount(amount: Int) -> Bool {
 trace @"entering validation"
 
 // ? operator — trace on False
-list.has(tx.extra_signatories, owner) ? @"owner must sign"
+list.has(tx.extra_signatories, owner)?
 
 // cbor.diagnostic — inspect any value
 trace cbor.diagnostic(datum)

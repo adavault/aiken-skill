@@ -170,8 +170,10 @@ tx.outputs
 // Trace for debugging (removed in production with --trace-level silent)
 trace @"checking signature"
 let signed = list.has(tx.extra_signatories, owner)
-// ? operator — trace-if-false
-list.has(tx.extra_signatories, owner) ? @"missing signature"
+// ? operator — postfix, traces expression name if False
+list.has(tx.extra_signatories, owner)?
+// Produces trace: "list.has(tx.extra_signatories, owner) ? False"
+// NOTE: ? is postfix only (expr?), not infix (expr ? "msg")
 ```
 
 ## Common Validation Patterns

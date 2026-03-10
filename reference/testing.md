@@ -115,10 +115,13 @@ ones. There is no separate `test_dependencies` section.
 
 ### Writing Property Tests
 
+**Important:** Tests can only have 0 or 1 fuzzed argument. For multiple fuzzed
+values, use `fuzz.both()` to combine into a tuple.
+
 ```aiken
 use aiken/fuzz
 
-// Basic property — any valid signer should work
+// Basic property — single fuzzed argument
 test prop_any_owner_can_unlock(owner via fuzz.bytearray_fixed(28)) {
   let datum = Datum { owner: owner }
   let tx = Transaction {
@@ -128,11 +131,14 @@ test prop_any_owner_can_unlock(owner via fuzz.bytearray_fixed(28)) {
   my_validator.spend(Some(datum), Unlock, mock_oref(), tx)
 }
 
-// Property with multiple fuzzed arguments
+// Multiple fuzzed values — use fuzz.both() to combine into a tuple
 test prop_amount_preserved(
-  amount via fuzz.int_between(2_000_000, 100_000_000),
-  owner via fuzz.bytearray_fixed(28),
+  params via fuzz.both(
+    fuzz.int_between(2_000_000, 100_000_000),
+    fuzz.bytearray_fixed(28),
+  ),
 ) {
+  let (amount, owner) = params
   let input_value = assets.from_lovelace(amount)
   let output_value = assets.from_lovelace(amount)
   assets.lovelace_of(input_value) == assets.lovelace_of(output_value)
@@ -140,18 +146,21 @@ test prop_amount_preserved(
 
 // Negative property — should fail for ANY wrong signer
 test prop_wrong_signer_fails(
-  owner via fuzz.bytearray_fixed(28),
   stranger via fuzz.bytearray_fixed(28),
 ) fail {
-  // Only fails when owner != stranger (which is overwhelmingly likely
-  // for random 28-byte values)
-  let datum = Datum { owner: owner }
+  let datum = Datum { owner: mock_owner }
   let tx = Transaction {
     ..transaction.placeholder,
     extra_signatories: [stranger],
   }
   my_validator.spend(Some(datum), Unlock, mock_oref(), tx)
 }
+
+// No arithmetic in fuzzer arguments — use constants
+const min_time = 1_700_000_001
+// WRONG: fuzz.int_at_least(lock_time + 1)  -- parser error
+// RIGHT: fuzz.int_at_least(min_time)
+```
 ```
 
 ### Available Fuzzers

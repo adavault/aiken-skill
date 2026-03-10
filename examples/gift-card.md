@@ -45,12 +45,12 @@ validator gift_card(utxo_ref: OutputReference) {
         let consumes_ref =
           list.any(tx.inputs, fn(input) {
             input.output_reference == utxo_ref
-          }) ? @"must consume specified UTxO"
+          }) ?
 
         // Must mint exactly 1 token
         let mints_one =
           dict.to_pairs(minted) == [Pair(token_name, 1)]
-            ? @"must mint exactly 1 token"
+            ?
 
         consumes_ref && mints_one
       }
@@ -58,7 +58,7 @@ validator gift_card(utxo_ref: OutputReference) {
       RedeemGiftCard { token_name } -> {
         // Must burn exactly 1 token
         dict.to_pairs(minted) == [Pair(token_name, -1)]
-          ? @"must burn exactly 1 token"
+          ?
       }
     }
   }
@@ -78,7 +78,7 @@ validator gift_card(utxo_ref: OutputReference) {
           quantity < 0
         })
 
-    burns_token ? @"must burn a gift card token to unlock"
+    burns_token ?
   }
 }
 ```

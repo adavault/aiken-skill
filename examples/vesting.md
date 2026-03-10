@@ -48,17 +48,17 @@ validator vesting {
       // Owner can withdraw at any time
       OwnerWithdraw ->
         list.has(tx.extra_signatories, d.owner)
-          ? @"owner signature required"
+          ?
 
       // Beneficiary can only withdraw after lock period
       BeneficiaryClaim -> {
         let signed_by_beneficiary =
           list.has(tx.extra_signatories, d.beneficiary)
-            ? @"beneficiary signature required"
+            ?
 
         let lock_expired =
           interval.is_entirely_after(tx.validity_range, d.lock_until)
-            ? @"lock period not expired"
+            ?
 
         signed_by_beneficiary && lock_expired
       }
@@ -154,10 +154,11 @@ test beneficiary_needs_signature() fail {
 
 use aiken/fuzz
 
+// Multiple fuzzed values: use fuzz.both() — tests allow max 1 argument
 test prop_owner_always_authorized(
-  owner via fuzz.bytearray_fixed(28),
-  time via fuzz.int(),
+  params via fuzz.both(fuzz.bytearray_fixed(28), fuzz.int()),
 ) {
+  let (owner, time) = params
   let datum = VestingDatum {
     lock_until: lock_time,
     owner: owner,
@@ -172,10 +173,16 @@ test prop_owner_always_authorized(
   vesting.spend(Some(datum), OwnerWithdraw, mock_oref(), tx)
 }
 
+// No arithmetic in fuzzer args — use a constant
+const after_lock_time = 1_700_000_000_001
+
 test prop_beneficiary_needs_both_sig_and_time(
-  beneficiary via fuzz.bytearray_fixed(28),
-  claim_time via fuzz.int_at_least(lock_time + 1),
+  params via fuzz.both(
+    fuzz.bytearray_fixed(28),
+    fuzz.int_at_least(after_lock_time),
+  ),
 ) {
+  let (beneficiary, claim_time) = params
   let datum = VestingDatum {
     lock_until: lock_time,
     owner: mock_owner,
@@ -195,7 +202,7 @@ test prop_beneficiary_needs_both_sig_and_time(
 1. **Time validation** — `interval.is_entirely_after()` with validity range
 2. **Dual authorization** — different rules per redeemer variant
 3. **interval.after() vs interval.before()** — constructing test ranges
-4. **Trace messages** — `? @"message"` for debuggable failures
+4. **Trace operator** — postfix `?` auto-traces expression name on failure
 5. **Off-chain requirement** — wallet must set `invalid_before` for time checks
 
 ## Off-Chain Integration Note

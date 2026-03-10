@@ -70,7 +70,7 @@ validator time_lock(owner: VerificationKeyHash, lock_until: POSIXTime) {
   spend(_datum: Option<Data>, _redeemer: Data, _oref: OutputReference, tx: Transaction) {
     let signed = list.has(tx.extra_signatories, owner)
     let after_deadline = interval.is_entirely_after(tx.validity_range, lock_until)
-    signed? && after_deadline?
+    signed && after_deadline
   }
 }
 ```
@@ -83,7 +83,7 @@ validator time_lock(owner: VerificationKeyHash, lock_until: POSIXTime) {
 validator owner_lock {
   spend(datum: Option<Datum>, _redeemer: Data, _oref: OutputReference, tx: Transaction) {
     expect Some(d) = datum
-    list.has(tx.extra_signatories, d.owner) ? @"not signed by owner"
+    list.has(tx.extra_signatories, d.owner)?
   }
 }
 ```
