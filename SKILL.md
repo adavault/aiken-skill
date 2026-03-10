@@ -294,6 +294,10 @@ Working examples with full test suites (all compiler-validated):
 - [Dead Man's Switch](examples/dead-mans-switch.md) — proof-of-life inheritance with periodic check-in
 - [Multi-Beneficiary](examples/multi-beneficiary.md) — percentage-based fund splitting for multiple heirs
 
+**Phase 6 — Marketplace & DAO:**
+- [Marketplace](examples/marketplace.md) — NFT listing/buying/cancelling with payment verification
+- [DAO Vote](examples/dao-vote.md) — token-weighted governance voting with lock-until-deadline
+
 ## Production References
 
 Open-source Aiken contracts for studying production-scale implementations.
@@ -303,6 +307,16 @@ These go beyond teaching patterns into real-world architecture:
 - [Minswap DEX V2](https://github.com/minswap/minswap-dex-v2) — Constant product AMM with batching architecture. Order validators, pool validators, batcher flow. Shows how withdraw-zero trick scales to production DEX throughput.
 - [Minswap Stableswap](https://github.com/minswap/minswap-stableswap) — Stableswap curve implementation in Aiken. Advanced math with the `rational` module.
 - [SundaeSwap V3](https://github.com/SundaeSwap-finance/sundae-contracts) — DEX rewritten from Plutus to Aiken. Uses withdraw-zero (`stake.ak`) for order batching. Good example of `validators/` and `lib/` project structure at scale.
+
+**Lending & DeFi (Audited, Production):**
+- [Lenfi Smart Contracts](https://github.com/lenfiLabs/lenfi-smart-contracts) — Pooled lending protocol in Aiken. Oracle validator, pool management, liquidation. Audited by Anastasia Labs + TxPipe. Open source.
+- [fallen-icarus P2P DeFi](https://github.com/fallen-icarus) — Full suite: [cardano-loans](https://github.com/fallen-icarus/cardano-loans) (P2P lending with credit histories, compound interest), [cardano-options](https://github.com/fallen-icarus/cardano-options) (options contracts), [cardano-swaps](https://github.com/fallen-icarus/cardano-swaps) (order-book DEX with atomic swaps). Aiken branches active.
+
+**NFT & Marketplace:**
+- [Nebula](https://github.com/spacebudz/nebula) (SpaceBudz) — NFT marketplace contract with bid/offer UTxO model, chain indexer, event listener. Production Aiken.
+
+**DAO & Governance:**
+- [Logical Mechanism](https://github.com/logical-mechanism) — "Distributed Representation" semi-liquid mint-lock-stake DAO. Also [Assist](https://github.com/logical-mechanism/Assist) library of specialized Aiken functions.
 
 **Reusable Libraries:**
 - [Anastasia Labs Design Patterns](https://github.com/Anastasia-Labs/aiken-design-patterns) — Importable library (`aiken add anastasia-labs/aiken-design-patterns --version v1.1.0`). Modules: merkelized validator, multi UTxO indexer, tx level minter, linked list (ordered/unordered), stake validator, parameter validation. Conway+ extensions planned.
