@@ -258,25 +258,51 @@ validator state_machine {
 
 ## Pool Restriction Pattern
 
-For ADAvault-specific use: restricting delegation to specific pools.
+Restricting delegation to specific pools. Directly relevant to ADAvault vaults.
+
+**Confirmed working** — See [pool-restriction.md](../examples/pool-restriction.md).
+
+**CRITICAL:** Must check ALL certificate types that involve pool delegation —
+not just `DelegateCredential` but also `RegisterAndDelegateCredential`. Both
+support `DelegateBlockProduction` and `DelegateBoth` delegate variants.
+The field name is `stake_pool` (not `pool_id`).
 
 ```aiken
-type VaultDatum {
-  owner: VerificationKeyHash,
-  allowed_pools: List<PoolId>,
+use cardano/certificate.{
+  DelegateBoth, DelegateBlockProduction, DelegateCredential,
+  RegisterAndDelegateCredential,
 }
 
-// Check delegation certificate targets allowed pool
-fn validate_delegation(tx: Transaction, allowed_pools: List<PoolId>) -> Bool {
+fn validate_delegation(
+  certs: List<Certificate>,
+  allowed_pools: List<PoolId>,
+) -> Bool {
   list.all(
-    tx.certificates,
+    certs,
     fn(cert) {
       when cert is {
-        DelegateCredential { delegate: DelegateBlockProduction { pool_id } } ->
-          list.has(allowed_pools, pool_id)
+        DelegateCredential { delegate, .. } ->
+          when delegate is {
+            DelegateBlockProduction { stake_pool } ->
+              list.has(allowed_pools, stake_pool)?
+            DelegateBoth { stake_pool, .. } ->
+              list.has(allowed_pools, stake_pool)?
+            _ -> True  // DelegateVote only — no pool
+          }
+        RegisterAndDelegateCredential { delegate, .. } ->
+          when delegate is {
+            DelegateBlockProduction { stake_pool } ->
+              list.has(allowed_pools, stake_pool)?
+            DelegateBoth { stake_pool, .. } ->
+              list.has(allowed_pools, stake_pool)?
+            _ -> True
+          }
         _ -> True  // non-delegation certs are fine
       }
-    }
+    },
   )
 }
 ```
+
+**Types used in validator signatures must be `pub`** — Aiken enforces that
+types referenced in validator handler parameters are publicly accessible.

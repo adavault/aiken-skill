@@ -281,3 +281,4 @@ Working examples with full test suites (all compiler-validated):
 - [Tagged Output](examples/tagged-output.md) — double satisfaction prevention with crypto hashing
 - [Validity Range](examples/validity-range.md) — interval normalisation for time-based validation
 - [TVMP](examples/tvmp.md) — transaction-level validation via minting policy receipt tokens
+- [Pool Restriction](examples/pool-restriction.md) — certificate-based delegation control with pool whitelist
