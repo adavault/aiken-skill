@@ -279,3 +279,5 @@ Working examples with full test suites (all compiler-validated):
 - [Withdraw Zero](examples/withdraw-zero.md) — batch validation via withdrawal delegation
 - [UTxO Indexer](examples/utxo-indexer.md) — O(1) input-output linking with redeemer indices
 - [Tagged Output](examples/tagged-output.md) — double satisfaction prevention with crypto hashing
+- [Validity Range](examples/validity-range.md) — interval normalisation for time-based validation
+- [TVMP](examples/tvmp.md) — transaction-level validation via minting policy receipt tokens

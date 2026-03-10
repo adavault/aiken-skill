@@ -81,29 +81,47 @@ attacker can point the index to a different input and bypass validation.
 **Problem:** Spend validators run per-input but you need transaction-level
 validation (e.g., checking global invariants across all inputs/outputs).
 
-**Solution:** Couple a minting policy with a spend validator. The spend
-validator checks that minting occurred. The minting policy runs once and
-validates the entire transaction.
+**Solution:** Couple a minting policy with a spend validator. The mint handler
+validates the entire transaction and mints a "receipt" token. The spend handler
+checks that the receipt was minted (policy present).
+
+**Confirmed working** — See [tvmp.md](../examples/tvmp.md).
+
+**CRITICAL:** `assets.from_asset(policy, name, 0)` normalises away — zero-quantity
+assets do NOT appear in `assets.policies()`. You must mint an actual token
+(quantity >= 1) for the policy to be detectable. Use receipt tokens, not zero-quantity.
 
 ```aiken
-validator coupled {
+use aiken/collection/dict
+use cardano/assets.{PolicyId}
+
+const receipt_name = "RECEIPT"
+
+validator tvmp_vault {
   // Minting policy — runs once per tx, validates everything
+  // Mints exactly 1 receipt token to signal validation passed
   mint(_redeemer: Data, policy_id: PolicyId, tx: Transaction) {
-    // Ensure mint is exactly 0 (we're not actually creating tokens)
     let minted = assets.tokens(tx.mint, policy_id)
-    dict.is_empty(minted) || validate_transaction(tx)
+    let mints_receipt =
+      (dict.to_pairs(minted) == [Pair(receipt_name, 1)])?
+
+    // Transaction-level validation here
+    mints_receipt && validate_transaction(tx)
   }
 
   // Spend validator — just checks minting policy ran
   spend(_datum: Option<Data>, _redeemer: Data, _oref: OutputReference, tx: Transaction) {
-    let policy_id = // own script hash
+    let own_policy = #"aaaaaa..."  // own script hash
     list.any(
       assets.policies(tx.mint),
-      fn(p) { p == policy_id }
-    )
+      fn(p) { p == own_policy }
+    )?
   }
 }
 ```
+
+**Key:** `dict.to_pairs(minted) == [Pair(name, qty)]` ensures exactly one token
+type minted with the exact quantity. This prevents minting arbitrary tokens.
 
 ## Validity Range Normalisation
 
@@ -113,22 +131,29 @@ is verbose and error-prone.
 
 **Solution:** Normalise to a clean enum early in validation.
 
+**Confirmed working** — See [validity-range.md](../examples/validity-range.md).
+
+**IMPORTANT:** `Interval` is NOT generic in Aiken stdlib — use `Interval` not
+`Interval<Int>`. The latter causes a "wrong number of type parameters" error.
+
 ```aiken
+use aiken/interval.{Finite, Interval, IntervalBound, NegativeInfinity,
+  PositiveInfinity}
+
 type NormalisedRange {
   ClosedRange { from: Int, to: Int }
   FromNegInf { to: Int }
   ToPosInf { from: Int }
   Always
-  InvalidRange
 }
 
-fn normalise(range: Interval<Int>) -> NormalisedRange {
+fn normalise(range: Interval) -> NormalisedRange {
   when (range.lower_bound.bound_type, range.upper_bound.bound_type) is {
     (Finite(lo), Finite(hi)) -> ClosedRange { from: lo, to: hi }
     (NegativeInfinity, Finite(hi)) -> FromNegInf { to: hi }
     (Finite(lo), PositiveInfinity) -> ToPosInf { from: lo }
     (NegativeInfinity, PositiveInfinity) -> Always
-    _ -> InvalidRange
+    _ -> fail @"invalid range bounds"
   }
 }
 
