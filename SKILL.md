@@ -293,3 +293,25 @@ Working examples with full test suites (all compiler-validated):
 - [Escrow](examples/escrow.md) — time-locked two-party exchange with refund/cancel
 - [Dead Man's Switch](examples/dead-mans-switch.md) — proof-of-life inheritance with periodic check-in
 - [Multi-Beneficiary](examples/multi-beneficiary.md) — percentage-based fund splitting for multiple heirs
+
+## Production References
+
+Open-source Aiken contracts for studying production-scale implementations.
+These go beyond teaching patterns into real-world architecture:
+
+**DEX Contracts (Audited, Production):**
+- [Minswap DEX V2](https://github.com/minswap/minswap-dex-v2) — Constant product AMM with batching architecture. Order validators, pool validators, batcher flow. Shows how withdraw-zero trick scales to production DEX throughput.
+- [Minswap Stableswap](https://github.com/minswap/minswap-stableswap) — Stableswap curve implementation in Aiken. Advanced math with the `rational` module.
+- [SundaeSwap V3](https://github.com/SundaeSwap-finance/sundae-contracts) — DEX rewritten from Plutus to Aiken. Uses withdraw-zero (`stake.ak`) for order batching. Good example of `validators/` and `lib/` project structure at scale.
+
+**Reusable Libraries:**
+- [Anastasia Labs Design Patterns](https://github.com/Anastasia-Labs/aiken-design-patterns) — Importable library (`aiken add anastasia-labs/aiken-design-patterns --version v1.1.0`). Modules: merkelized validator, multi UTxO indexer, tx level minter, linked list (ordered/unordered), stake validator, parameter validation. Conway+ extensions planned.
+- [SundaeSwap aicone](https://github.com/SundaeSwap-finance/aicone) — Reusable Aiken utility libraries.
+
+**SDK Integration:**
+- [MeshJS Contracts](https://github.com/MeshJS/mesh/tree/main/packages/mesh-contract/src) — Aiken contracts (escrow, marketplace, swap, vesting) with full TypeScript SDK integration. Shows the on-chain → off-chain bridge.
+
+**Learning Resources:**
+- [Awesome Aiken](https://github.com/aiken-lang/awesome-aiken) — Curated list of Aiken libraries, dApps, tutorials.
+- [Aiken Official Docs](https://aiken-lang.org/fundamentals/getting-started) — Language fundamentals and common design patterns.
+- [Cardano CTF](https://github.com/vacuumlabs/cardano-ctf) — 25 challenges teaching real exploit patterns against Plutus/Aiken validators.
