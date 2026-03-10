@@ -97,13 +97,21 @@ Property tests generate random inputs and verify invariants. Uses the
 
 ### Setup
 
-Add to `aiken.toml`:
+Add via CLI (preferred):
+```bash
+aiken add aiken-lang/fuzz --version v2.2.0
+```
+
+This adds to `aiken.toml` under `[[dependencies]]`:
 ```toml
-[[test_dependencies]]
+[[dependencies]]
 name = "aiken-lang/fuzz"
 version = "v2.2.0"
 source = "github"
 ```
+
+**Note:** Aiken uses `[[dependencies]]` for all packages including test-only
+ones. There is no separate `test_dependencies` section.
 
 ### Writing Property Tests
 

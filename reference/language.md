@@ -26,9 +26,12 @@ let unit: Void = Void
 
 ### Custom Types
 
+**Important:** Types used in validator handler signatures (datum, redeemer) must
+be `pub`. Without `pub`, the compiler raises a `private_leak` error.
+
 ```aiken
-// Product type (single constructor)
-type Datum {
+// Product type (single constructor) — pub required if used in validator signature
+pub type Datum {
   owner: VerificationKeyHash,
   deadline: Int,
   amount: Int,
@@ -176,6 +179,10 @@ finalize(y)
 ```
 
 ## Modules
+
+**Important:** All `use` imports must appear at the top of the file, before any
+type definitions, constants, or validators. Aiken does not allow imports after
+other declarations.
 
 ```aiken
 // Import
