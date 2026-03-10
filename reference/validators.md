@@ -187,26 +187,37 @@ validator multi_sig {
 
 ### Continuing Output (State Machine)
 
-Validator that requires its own output to persist with updated state:
+Validator that requires its own output to persist with updated state.
+
+**Confirmed working patterns:**
+- `transaction.find_input(tx.inputs, oref)` — finds the input being validated
+- `InlineDatum(MyType { ... })` — Aiken auto-coerces custom types to `Data`
+- `expect new_state: MyType = raw` — casts `Data` back to typed value
+- `list.filter` on `tx.outputs` by `payment_credential` to find script outputs
 
 ```aiken
 validator counter {
-  spend(datum: Option<Int>, redeemer: CountAction, oref: OutputReference, tx: Transaction) {
-    expect Some(count) = datum
+  spend(datum: Option<CounterState>, redeemer: CounterAction, oref: OutputReference, tx: Transaction) {
+    expect Some(state) = datum
     expect Some(own_input) = transaction.find_input(tx.inputs, oref)
-    let script_address = own_input.output.address
+    let script_cred = own_input.output.address.payment_credential
 
     when redeemer is {
       Increment -> {
-        // Must produce output back to same script with count + 1
-        expect [output] = transaction.find_script_outputs(tx.outputs, script_address.payment_credential)
-        expect InlineDatum(raw) = output.datum
-        expect new_count: Int = raw
-        new_count == count + 1
+        // Find continuing outputs to same script
+        let script_outputs =
+          list.filter(tx.outputs, fn(o) {
+            o.address.payment_credential == script_cred
+          })
+        // Exactly one continuing output
+        expect [continuing_output] = script_outputs
+        // Extract and type-check the new datum
+        expect InlineDatum(raw) = continuing_output.datum
+        expect new_state: CounterState = raw
+        (new_state.count == state.count + 1)? &&
+        (new_state.owner == state.owner)?
       }
-      Reset -> {
-        list.has(tx.extra_signatories, admin_pkh)
-      }
+      Reset -> list.has(tx.extra_signatories, state.owner)?
     }
   }
 }

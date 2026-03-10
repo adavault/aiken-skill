@@ -293,6 +293,42 @@ let tx = Transaction {
 }
 ```
 
+## Single-Variant Pattern Matching
+
+When a type has only one constructor, use `let` instead of `when/is`:
+
+```aiken
+// Compiler warns about single-clause `when`
+// BAD:
+when redeemer is {
+  Approve -> do_something()
+}
+
+// GOOD:
+let Approve = redeemer
+do_something()
+```
+
+## Hex Literals
+
+`#"..."` requires valid hexadecimal (even number of hex chars). Non-hex strings
+cause parser errors:
+
+```aiken
+// GOOD
+const hash = #"aabb01"
+const empty = #""
+
+// BAD — parser error (not hex)
+// const bad = #"attacker"
+// const bad = #"xyz"
+```
+
+For text in ByteArray, use UTF-8 string literals instead:
+```aiken
+const token_name = "VAULT"    // UTF-8 encoded ByteArray
+```
+
 ## Constants
 
 ```aiken

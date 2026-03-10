@@ -263,8 +263,14 @@ For detailed information, consult:
 
 ## Examples
 
-Working examples with full test suites:
+Working examples with full test suites (all compiler-validated):
 
+**Phase 1 — Core Patterns:**
 - [Hello World](examples/hello-world.md) — simplest spend validator
 - [Vesting](examples/vesting.md) — time-locked spending with dual authorization
-- [Gift Card](examples/gift-card.md) — mint+spend dual handler with NFT
+- [Gift Card](examples/gift-card.md) — mint+spend dual handler with one-shot NFT
+
+**Phase 2 — Security & Design Patterns:**
+- [Multi-Sig](examples/multi-sig.md) — M-of-N threshold signatures
+- [State Machine](examples/state-machine.md) — continuing output pattern with state transitions
+- [NFT Vault](examples/nft-vault.md) — datum hijacking prevention with NFT authentication

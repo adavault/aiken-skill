@@ -52,7 +52,13 @@ test fails_with_message() fail @"missing signature" {
 
 ## Building Test Transactions
 
-Use `transaction.placeholder` as a base and override fields:
+Use `transaction.placeholder` as a base and override fields.
+
+**InlineDatum in tests:** Aiken auto-coerces custom types to `Data`:
+```aiken
+// This works — no explicit Data conversion needed
+datum: InlineDatum(MyState { count: 0, owner: #"aabb01" })
+```
 
 ```aiken
 use cardano/transaction.{
