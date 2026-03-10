@@ -35,6 +35,16 @@ When asked to write a smart contract:
 5. **Review for security** — check the security patterns in [security.md](reference/security.md)
 6. **Build and verify** — `aiken build` must succeed, `aiken check` must pass
 
+When asked to audit or review a smart contract:
+
+1. **Follow the auditing methodology** in [auditing.md](reference/auditing.md)
+2. **Phase 1:** Understand types, state model, actors, and trust boundaries
+3. **Phase 2:** Systematic vulnerability scan against all 11 security categories
+4. **Phase 3:** Parameterized validator analysis (if applicable)
+5. **Phase 4:** Multi-validator interaction review (if applicable)
+6. **Phase 5:** Test coverage assessment — identify missing tests
+7. **Report findings** with severity, location, exploitation path, and fix
+
 ## Handler Signatures (Aiken v1.1+)
 
 ```aiken
@@ -257,7 +267,8 @@ For detailed information, consult:
 - [Language reference](reference/language.md) — types, syntax, modules, encoding
 - [Validator patterns](reference/validators.md) — common validator architectures
 - [Testing guide](reference/testing.md) — unit, property-based, scenario testing
-- [Security patterns](reference/security.md) — eUTxO attack vectors and mitigations
+- [Security patterns](reference/security.md) — eUTxO attack vectors and mitigations (11 categories)
+- [Auditing methodology](reference/auditing.md) — structured audit process, severity classification, CIP-52 compliance
 - [Standard library](reference/stdlib.md) — key modules and functions
 - [Design patterns](reference/patterns.md) — withdraw-zero trick, UTxO indexers, etc.
 

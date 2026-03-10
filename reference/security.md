@@ -173,6 +173,121 @@ won't notice unauthorized token operations.
 - Always check `tx.mint` is empty or contains only expected operations
 - For validators that use authentication tokens, verify exact mint quantities
 
+### 8. Other Token Name (Same Policy)
+
+**What:** A minting policy validates the minting of one specific token name but
+doesn't restrict minting of *other* token names under the same policy ID. An
+attacker mints additional tokens under your policy, potentially creating fake
+authentication tokens.
+
+**Example:** Policy checks `dict.to_pairs(minted) == [Pair("AUTH", 1)]` for
+minting, but this only validates when minting AUTH. The attacker submits a
+separate transaction minting "FAKE" under the same policy — the minting
+policy's redeemer doesn't cover this case.
+
+**Mitigation:**
+- Validate the **entire** `assets.tokens(tx.mint, policy_id)` dict, not just one entry
+- Ensure the minting policy handles ALL possible token names
+- Use `expect [Pair(name, qty)] = dict.to_pairs(minted)` to enforce exactly one token name
+
+```aiken
+// BAD — only checks for expected token name
+mint(redeemer: Action, policy_id: PolicyId, tx: Transaction) {
+  when redeemer is {
+    MintAuth -> assets.quantity_of(tx.mint, policy_id, "AUTH") == 1
+    // Attacker mints "FAKE" — no redeemer case handles it
+  }
+}
+
+// GOOD — validates entire token dict
+mint(redeemer: Action, policy_id: PolicyId, tx: Transaction) {
+  let minted = assets.tokens(tx.mint, policy_id)
+  when redeemer is {
+    MintAuth -> dict.to_pairs(minted) == [Pair("AUTH", 1)]
+    BurnAuth -> dict.to_pairs(minted) == [Pair("AUTH", -1)]
+  }
+}
+```
+
+### 9. Unbounded Datum Growth
+
+**What:** A continuing output pattern (state machine) allows datum fields to
+grow without limit. Eventually the datum exceeds Cardano's 16KB transaction
+size limit, making the UTxO permanently unspendable — funds are locked forever.
+
+**Example:** A validator that appends to a `List<ByteArray>` in the datum on
+each state transition. After enough transitions, the datum cannot fit in a
+transaction.
+
+**Mitigation:**
+- Set hard limits on datum collection sizes in the validator
+- Use merkle roots instead of storing full lists
+- Prune old entries on each transition
+- Consider off-chain storage with on-chain commitment hashes
+
+```aiken
+// BAD — datum grows without limit
+type State {
+  history: List<Action>,  // Grows every transition
+  count: Int,
+}
+
+// GOOD — bounded history, old entries pruned
+type State {
+  recent_history: List<Action>,  // Capped at N entries
+  count: Int,
+}
+
+// In validator:
+let new_history = [action, ..state.recent_history] |> list.take(10)
+```
+
+### 10. UTxO Contention
+
+**What:** When multiple users need to interact with the same script UTxO
+(e.g., a shared pool or state machine), transactions conflict because only one
+can consume a given UTxO per block. This creates a bottleneck where most
+transactions fail.
+
+**Impact:** Protocol stalls under load. Real problem for DEXes and lending protocols.
+
+**Mitigation:**
+- **Batching via withdraw-zero** — collect individual orders as separate UTxOs,
+  batch-process them in a single transaction (see [withdraw-zero](../examples/withdraw-zero.md))
+- **UTxO fan-out** — split state across multiple UTxOs that can be consumed independently
+- **Off-chain ordering** — use a batcher service to sequence transactions
+- **Reference inputs** — read shared state without consuming it (where possible)
+
+### 11. Insufficient Staking Credential Control
+
+**What:** A validator checks the payment credential of output addresses but
+ignores the staking credential. An attacker can redirect staking rewards by
+supplying outputs with the correct payment credential but their own staking key.
+
+**Example:** Continuing output validator checks
+`output.address.payment_credential == script_cred` but doesn't verify
+`output.address.stake_credential`. Attacker earns staking rewards from protocol
+ADA by setting their stake key on the output address.
+
+**Mitigation:**
+- Validate the **full address** (payment + staking) for protocol-owned outputs
+- Use `address.from_script(hash) |> address.with_delegation_script(stake_hash)`
+  to construct expected addresses with staking credentials
+- For user-facing outputs, staking credential is user's choice (no check needed)
+
+```aiken
+// BAD — only checks payment credential
+let correct_addr =
+  (output.address.payment_credential == script_cred)?
+
+// GOOD — checks full address including staking credential
+let expected_address =
+  address.from_script(script_hash)
+    |> address.with_delegation_script(stake_script_hash)
+let correct_addr =
+  (output.address == expected_address)?
+```
+
 ## Security Checklist
 
 For every validator, verify:
@@ -181,17 +296,24 @@ For every validator, verify:
 - [ ] **Time:** Validity range is constrained appropriately
 - [ ] **Value:** Input/output values are conserved or explicitly accounted for
 - [ ] **Datum:** Datum content is validated, not just present
+- [ ] **Datum size:** Datum cannot grow unbounded across transitions
 - [ ] **Redeemer:** All redeemer variants are handled exhaustively
 - [ ] **Mint field:** Unexpected minting/burning is blocked
+- [ ] **Token names:** All token names under your policy are validated
 - [ ] **Double satisfaction:** Inputs are linked to specific outputs
 - [ ] **Reference inputs:** Authenticated by NFT or similar
 - [ ] **Continuing outputs:** State transitions are validated
-- [ ] **Script address:** Outputs to script use correct address
+- [ ] **Script address:** Outputs to script use correct address (payment + staking)
+- [ ] **Staking credentials:** Protocol-owned outputs have correct staking key
 - [ ] **Token composition:** No unexpected tokens in values
 - [ ] **Computation bounds:** No unbounded iteration over tx fields
+- [ ] **Contention:** Shared state doesn't create single-UTxO bottleneck
 
 ## Resources
 
-- [Cardano CTF](https://github.com/vacuumlabs/cardano-ctf) — 25 challenges teaching real exploit patterns
-- [Vacuumlabs vulnerability series](https://medium.com/vacuumlabs) — 6-part deep dive
-- [CIP-52](https://cips.cardano.org/cip/CIP-0052) — Audit best practices
+- [Cardano CTF](https://github.com/vacuumlabs/cardano-ctf) — 25 challenges teaching real exploit patterns (original 11 + banking series 14)
+- [Vacuumlabs vulnerability series](https://medium.com/@vacuumlabs_auditing) — 6-part deep dive on most-audited vulnerabilities
+- [MLabs common vulnerabilities](https://www.mlabs.city/blog/common-plutus-security-vulnerabilities) — 11-category vulnerability taxonomy with severity classification
+- [Plutonomicon vulnerabilities](https://plutonomicon.github.io/plutonomicon/vulnerabilities) — eUTxO-specific attack patterns including oracle and concurrency attacks
+- [CIP-52](https://cips.cardano.org/cip/CIP-0052) — Cardano audit best practices standard
+- [Auditing guide](auditing.md) — Structured audit methodology for reviewing Aiken validators
