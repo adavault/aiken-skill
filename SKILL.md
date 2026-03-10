@@ -283,3 +283,13 @@ Working examples with full test suites (all compiler-validated):
 - [TVMP](examples/tvmp.md) — transaction-level validation via minting policy receipt tokens
 - [Pool Restriction](examples/pool-restriction.md) — certificate-based delegation control with pool whitelist
 - [Oracle Feed](examples/oracle-feed.md) — reference input authentication with NFT verification
+
+**Phase 4 — Governance:**
+- [Governance Vote](examples/governance-vote.md) — SPO voting authorization via `vote` handler
+- [Governance Publish](examples/governance-publish.md) — DRep registration control via `publish` handler
+- [Governance Propose](examples/governance-propose.md) — treasury withdrawal guardrails via `propose` handler
+
+**Phase 5 — DeFi & Inheritance:**
+- [Escrow](examples/escrow.md) — time-locked two-party exchange with refund/cancel
+- [Dead Man's Switch](examples/dead-mans-switch.md) — proof-of-life inheritance with periodic check-in
+- [Multi-Beneficiary](examples/multi-beneficiary.md) — percentage-based fund splitting for multiple heirs

@@ -61,6 +61,47 @@ validator token_lock {
 }
 ```
 
+### Governance Validators (Conway Era)
+
+**Confirmed working** — See governance-vote.md, governance-publish.md, governance-propose.md.
+
+```aiken
+// Vote handler — authorize governance votes
+validator spo_vote(pool_operator: ByteArray) {
+  vote(redeemer: VoteRedeemer, _voter: Voter, tx: Transaction) {
+    list.has(tx.extra_signatories, pool_operator)?
+  }
+}
+
+// Publish handler — control certificate operations (DRep registration, etc.)
+validator drep_controller(admin: ByteArray) {
+  publish(_redeemer: Action, certificate: Certificate, tx: Transaction) {
+    when certificate is {
+      RegisterDelegateRepresentative { .. } -> list.has(tx.extra_signatories, admin)?
+      _ -> fail @"unsupported certificate"
+    }
+  }
+}
+
+// Propose handler — guardrail for governance proposals
+validator treasury_guardrail(proposer: ByteArray) {
+  propose(_redeemer: Data, proposal: ProposalProcedure, tx: Transaction) {
+    when proposal.governance_action is {
+      TreasuryWithdrawal { .. } -> list.has(tx.extra_signatories, proposer)?
+      _ -> fail @"only treasury withdrawals allowed"
+    }
+  }
+}
+```
+
+**Test calling convention** for parameterized validators:
+```aiken
+// validator_name.handler(param, redeemer, handler_arg, tx)
+spo_vote.vote(operator_key, CastVote, mock_voter(), tx)
+drep_controller.publish(admin_key, Register, cert, tx)
+treasury_guardrail.propose(proposer_key, Submit, proposal, tx)
+```
+
 ### Parameterized Validator
 
 Parameters are fixed at deployment time. Different parameters = different script address:

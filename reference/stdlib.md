@@ -283,3 +283,57 @@ cbor.serialise(value) -> ByteArray
 // Common use: serialize for hashing
 crypto.blake2b_256(cbor.serialise(my_oref))
 ```
+
+### cardano/governance
+
+Governance types for Conway-era voting, proposals, and DRep operations.
+**Confirmed working** — used in governance vote, publish, and propose examples.
+
+```aiken
+use cardano/governance.{GovernanceActionId, StakePool, Vote, Voter,
+  ProposalProcedure, GovernanceAction, TreasuryWithdrawal, NicePoll}
+
+// Voter types
+type Voter {
+  ConstitutionalCommitteeMember(Credential)
+  DelegateRepresentative(Credential)
+  StakePool(VerificationKeyHash)
+}
+
+// Vote options
+type Vote { No, Yes, Abstain }
+// Access as: governance.Yes, governance.No, governance.Abstain
+
+// Governance action reference
+type GovernanceActionId {
+  transaction: TransactionId,
+  proposal_procedure: Int,
+}
+
+// Proposal structure
+type ProposalProcedure {
+  deposit: Lovelace,
+  return_address: Credential,  // NOT Address — use VerificationKey(hash)
+  governance_action: GovernanceAction,
+}
+
+// Governance action types
+type GovernanceAction {
+  ProtocolParameters { ancestor, new_parameters, guardrails }
+  HardFork { ancestor, new_version }
+  TreasuryWithdrawal { beneficiaries: Pairs<Credential, Lovelace>, guardrails: Option<ScriptHash> }
+  NoConfidence { ancestor }
+  ConstitutionalCommittee { ancestor, evicted_members, added_members, quorum }
+  NewConstitution { ancestor, constitution }
+  NicePoll  // simplest action, no fields
+}
+
+// Transaction fields:
+tx.votes: Pairs<Voter, Pairs<GovernanceActionId, Vote>>
+tx.proposal_procedures: List<ProposalProcedure>
+```
+
+**Key gotchas:**
+- `ProtocolParametersUpdate` is an opaque type — cannot be constructed in tests
+- `return_address` on `ProposalProcedure` is `Credential`, not `Address`
+- Vote constructors are qualified: `governance.Yes` not just `Yes`
