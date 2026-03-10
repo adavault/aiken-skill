@@ -121,6 +121,8 @@ spend(datum: Option<Datum>, redeemer: SpendRedeemer, _oref: OutputReference, tx:
 their locking script. An attacker can supply fake reference inputs with
 manipulated data.
 
+**Confirmed working** — See [oracle-feed.md](../examples/oracle-feed.md).
+
 **Mitigation:**
 - Authenticate reference inputs by checking for known NFTs
 - Never trust data from reference inputs unless authenticated
@@ -132,11 +134,13 @@ expect Some(oracle_ref) =
 expect InlineDatum(raw) = oracle_ref.output.datum
 expect price: Int = raw  // Attacker supplies fake price
 
-// GOOD — verify oracle NFT is present
-expect Some(oracle_ref) =
-  list.find(tx.reference_inputs, fn(i) {
-    assets.quantity_of(i.output.value, oracle_policy, oracle_token) == 1
-  })
+// GOOD — verify oracle NFT is present (confirmed working)
+expect Some(ref_input) = list.at(tx.reference_inputs, redeemer.oracle_index)
+let has_nft =
+  (assets.quantity_of(ref_input.output.value, oracle_policy, oracle_token) == 1)?
+expect True = has_nft
+expect InlineDatum(raw) = ref_input.output.datum
+expect oracle: OracleDatum = raw
 ```
 
 ### 5. Missing Redeemer Validation
