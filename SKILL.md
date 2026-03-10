@@ -274,3 +274,8 @@ Working examples with full test suites (all compiler-validated):
 - [Multi-Sig](examples/multi-sig.md) — M-of-N threshold signatures
 - [State Machine](examples/state-machine.md) — continuing output pattern with state transitions
 - [NFT Vault](examples/nft-vault.md) — datum hijacking prevention with NFT authentication
+
+**Phase 3 — Advanced Optimization Patterns:**
+- [Withdraw Zero](examples/withdraw-zero.md) — batch validation via withdrawal delegation
+- [UTxO Indexer](examples/utxo-indexer.md) — O(1) input-output linking with redeemer indices
+- [Tagged Output](examples/tagged-output.md) — double satisfaction prevention with crypto hashing

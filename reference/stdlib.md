@@ -244,14 +244,42 @@ rational.floor(r) -> Int
 rational.round(r) -> Int
 ```
 
-### aiken/cbor
+### aiken/crypto
 
-CBOR encoding for debugging.
+Cryptographic operations. **Confirmed working** — used in tagged output pattern.
 
 ```aiken
+use aiken/crypto
+
+// Hash any ByteArray
+crypto.blake2b_256(bytes) -> ByteArray     // 32 bytes output
+crypto.blake2b_224(bytes) -> ByteArray     // 28 bytes output
+crypto.sha2_256(bytes) -> ByteArray
+crypto.sha3_256(bytes) -> ByteArray
+crypto.keccak_256(bytes) -> ByteArray
+
+// Signature verification
+crypto.verify_ed25519_signature(key, msg, sig) -> Bool
+
+// Common pattern: unique tag from output reference
+fn tag_from_oref(oref: OutputReference) -> ByteArray {
+  crypto.blake2b_256(cbor.serialise(oref))
+}
+```
+
+### aiken/cbor
+
+CBOR encoding. **Must be explicitly imported** — `use aiken/cbor`.
+
+```aiken
+use aiken/cbor
+
 // Inspect any value as CBOR diagnostic notation
 trace cbor.diagnostic(my_datum)
 
-// Serialize to ByteArray
+// Serialize ANY Aiken value to ByteArray (confirmed working)
 cbor.serialise(value) -> ByteArray
+
+// Common use: serialize for hashing
+crypto.blake2b_256(cbor.serialise(my_oref))
 ```

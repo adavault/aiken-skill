@@ -13,25 +13,33 @@ or can be batched.
 only checks that a withdrawal from the staking script exists (O(1) check).
 The withdrawal validator runs once per transaction and performs all validation.
 
+**Confirmed working** — See [withdraw-zero.md](../examples/withdraw-zero.md).
+
 ```aiken
+use cardano/address.{Credential, Script}
+
 // Spend validator — lightweight check
-validator batch_spender {
+validator batch_spend(staking_validator_hash: ByteArray) {
   spend(_datum: Option<Data>, _redeemer: Data, _oref: OutputReference, tx: Transaction) {
-    // Just verify the staking validator ran
-    let withdrawal_present =
-      pairs.has_key(tx.withdrawals, Script(staking_script_hash))
-    withdrawal_present
+    // Check withdrawal by iterating tx.withdrawals (Pairs<Credential, Lovelace>)
+    list.any(tx.withdrawals, fn(w) {
+      let Pair(cred, _amount) = w
+      cred == Script(staking_validator_hash)
+    })?
   }
 }
 
 // Withdrawal validator — runs ONCE, validates everything
 validator batch_validator {
   withdraw(_redeemer: Data, _credential: Credential, tx: Transaction) {
-    // Validate all inputs and outputs in one execution
     validate_batch(tx.inputs, tx.outputs)
   }
 }
 ```
+
+**Key:** `tx.withdrawals` is `List<Pair<Credential, Int>>`. Destructure with
+`let Pair(cred, _amount) = w`. Credential constructors: `Script(hash)` and
+`address.VerificationKey(hash)` — import from `cardano/address`.
 
 **When to use:** Any validator that processes multiple UTxOs per transaction
 (DEXes, batch operations, bulk claims).
@@ -41,6 +49,8 @@ validator batch_validator {
 **Problem:** Linking specific inputs to specific outputs without iterating.
 
 **Solution:** Use redeemer to pass indices mapping inputs to outputs.
+
+**Confirmed working** — See [utxo-indexer.md](../examples/utxo-indexer.md).
 
 ```aiken
 type IndexedRedeemer {
@@ -55,13 +65,16 @@ validator indexed_validator {
     expect Some(input) = list.at(tx.inputs, redeemer.input_index)
     expect Some(output) = list.at(tx.outputs, redeemer.output_index)
 
-    // Verify the index points to our actual input
-    input.output_reference == oref &&
+    // CRITICAL: Verify the index points to our actual input
+    let correct_input = (input.output_reference == oref)?
     // Validate the input → output transition
-    validate_transition(d, input, output)
+    correct_input && validate_transition(d, input, output)
   }
 }
 ```
+
+**Key:** Always verify `input.output_reference == oref` — without this, an
+attacker can point the index to a different input and bypass validation.
 
 ## Transaction Level Validator Minting Policy (TVMP)
 
