@@ -178,20 +178,35 @@ let y <- do_something(x)
 finalize(y)
 ```
 
+## Tuple Access
+
+```aiken
+// Tuples returned by functions like assets.flatten()
+// Access elements with .1st, .2nd, .3rd etc.
+let entries = assets.flatten(tx.mint)
+list.any(entries, fn(entry) { entry.3rd < 0 })  // 3rd element is quantity
+```
+
 ## Modules
 
 **Important:** All `use` imports must appear at the top of the file, before any
 type definitions, constants, or validators. Aiken does not allow imports after
 other declarations.
 
+**Important:** Module paths use `/` separators in `use` statements, then `.` for
+qualified access:
+
 ```aiken
-// Import
+// Import — slash-separated paths
 use aiken/collection/list
 use cardano/transaction.{Transaction, find_input}
 use cardano/assets.{lovelace_of}
+use cardano/address
 
-// Qualified usage
+// Qualified usage — dot-separated after import
 list.has(signatories, owner)
+address.from_verification_key(#"aabb...")
+// WRONG: cardano.address.from_verification_key(#"aabb...")
 
 // Unqualified (imported directly)
 let input = find_input(tx.inputs, oref)

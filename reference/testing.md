@@ -160,7 +160,13 @@ test prop_wrong_signer_fails(
 const min_time = 1_700_000_001
 // WRONG: fuzz.int_at_least(lock_time + 1)  -- parser error
 // RIGHT: fuzz.int_at_least(min_time)
-```
+
+// No complex expressions in `via` clause — fuzz simple types, construct in body
+// WRONG: test prop(ref via fuzz.map(fuzz.bytearray_fixed(32), fn(b) { OutputReference { ... } }))
+// RIGHT: test prop(fake_txid via fuzz.bytearray_fixed(32)) {
+//          let fake_ref = OutputReference { transaction_id: fake_txid, output_index: 0 }
+//          ...
+//        }
 ```
 
 ### Available Fuzzers

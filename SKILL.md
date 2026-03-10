@@ -211,8 +211,10 @@ Always write tests alongside validators. See [testing.md](reference/testing.md) 
 ```aiken
 // Unit test
 test must_be_signed() {
-  let tx = transaction.placeholder
-    |> fn(tx) { Transaction { ..tx, extra_signatories: [mock_signer] } }
+  let tx = Transaction {
+    ..transaction.placeholder,
+    extra_signatories: [mock_signer],
+  }
   my_validator.spend(Some(datum), redeemer, mock_oref, tx)
 }
 
@@ -221,8 +223,12 @@ test must_fail_without_signature() fail {
   my_validator.spend(Some(datum), redeemer, mock_oref, transaction.placeholder)
 }
 
+// Parameterized validator — pass params first, then handler args
+// validator gift_card(utxo_ref: OutputReference, token_name: ByteArray) { mint(...) }
+// Call as: gift_card.mint(utxo_ref, token_name, redeemer, policy_id, tx)
+
 // Property-based test
-test prop_any_signer_works(signer: VerificationKeyHash via fuzz.bytearray_fixed(28)) {
+test prop_any_signer_works(signer via fuzz.bytearray_fixed(28)) {
   let datum = MyDatum { owner: signer }
   let tx = Transaction {
     ..transaction.placeholder,

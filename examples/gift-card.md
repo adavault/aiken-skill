@@ -12,13 +12,13 @@ This demonstrates:
 ## Types
 
 ```aiken
-// lib/gift_card/types.ak
+// Types are defined inline in the validator file
 
-type MintRedeemer {
+pub type MintRedeemer {
   /// Create a gift card: mint NFT + lock ADA
-  CreateGiftCard { token_name: ByteArray }
+  CreateGiftCard
   /// Redeem a gift card: burn NFT + unlock ADA
-  RedeemGiftCard { token_name: ByteArray }
+  RedeemGiftCard
 }
 ```
 
@@ -29,56 +29,46 @@ type MintRedeemer {
 
 use aiken/collection/dict
 use aiken/collection/list
-use cardano/assets
-use cardano/transaction.{Transaction, OutputReference, InlineDatum}
+use cardano/address
+use cardano/assets.{PolicyId}
+use cardano/transaction.{Input, NoDatum, Output, OutputReference, Transaction}
 
-// Parameterized by the UTxO consumed during minting (ensures one-shot)
-validator gift_card(utxo_ref: OutputReference) {
+// Parameterized by the UTxO consumed during minting AND token name
+validator gift_card(utxo_ref: OutputReference, token_name: ByteArray) {
 
   // --- Minting Policy ---
   mint(redeemer: MintRedeemer, policy_id: PolicyId, tx: Transaction) {
     let minted = assets.tokens(tx.mint, policy_id)
 
     when redeemer is {
-      CreateGiftCard { token_name } -> {
+      CreateGiftCard -> {
         // Must consume the specific UTxO (one-shot guarantee)
         let consumes_ref =
-          list.any(tx.inputs, fn(input) {
-            input.output_reference == utxo_ref
-          }) ?
+          list.any(
+            tx.inputs,
+            fn(input) { input.output_reference == utxo_ref },
+          )?
 
-        // Must mint exactly 1 token
+        // Must mint exactly 1 token with the expected name
         let mints_one =
-          dict.to_pairs(minted) == [Pair(token_name, 1)]
-            ?
+          (dict.to_pairs(minted) == [Pair(token_name, 1)])?
 
         consumes_ref && mints_one
       }
 
-      RedeemGiftCard { token_name } -> {
+      RedeemGiftCard ->
         // Must burn exactly 1 token
-        dict.to_pairs(minted) == [Pair(token_name, -1)]
-          ?
-      }
+        (dict.to_pairs(minted) == [Pair(token_name, -1)])?
     }
   }
 
   // --- Spend Validator ---
   spend(_datum: Option<Data>, _redeemer: Data, _oref: OutputReference, tx: Transaction) {
-    // Spending the locked ADA requires burning a gift card token
-    // from this policy. Any token name counts.
-    let own_policy = // In practice, derived from the script's own hash
-      policy_id_from_utxo_ref(utxo_ref)
-
-    let burns_token =
-      assets.tokens(tx.mint, own_policy)
-        |> dict.to_pairs()
-        |> list.any(fn(pair) {
-          let Pair(_name, quantity) = pair
-          quantity < 0
-        })
-
-    burns_token ?
+    // Spending requires burning any token from this policy.
+    // Note: spend handler cannot access its own policy_id directly.
+    // Use assets.flatten() to check for any negative mint quantities.
+    let all_minted = assets.flatten(tx.mint)
+    list.any(all_minted, fn(entry) { entry.3rd < 0 })
   }
 }
 ```
@@ -88,88 +78,113 @@ validator gift_card(utxo_ref: OutputReference) {
 ```aiken
 // validators/gift_card.ak (continued)
 
-const mock_utxo_ref = OutputReference {
-  transaction_id: #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  output_index: 0,
+const mock_utxo_ref =
+  OutputReference {
+    transaction_id: #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    output_index: 0,
+  }
+
+const mock_policy_id =
+  #"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+
+const token = "GIFT"
+
+fn mock_input() -> Input {
+  Input {
+    output_reference: mock_utxo_ref,
+    output: Output {
+      address: address.from_verification_key(
+        #"aabbccddee112233445566778899001122334455667788990011223344556677",
+      ),
+      value: assets.from_lovelace(5_000_000),
+      datum: NoDatum,
+      reference_script: None,
+    },
+  }
 }
 
-const mock_policy_id = #"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-const token_name = "GIFT"
-
-fn mock_mint_value(name: ByteArray, qty: Int) -> Value {
-  assets.from_asset(mock_policy_id, name, qty)
-}
-
-// --- Mint Tests ---
+// --- Mint: CreateGiftCard Tests ---
 
 test create_gift_card_succeeds() {
-  let tx = Transaction {
-    ..transaction.placeholder,
-    inputs: [
-      Input {
-        output_reference: mock_utxo_ref,
-        output: Output {
-          address: address.from_verification_key(#"aabb"),
-          value: assets.from_lovelace(5_000_000),
-          datum: NoDatum,
-          reference_script: None,
-        },
-      },
-    ],
-    mint: assets.from_asset(mock_policy_id, token_name, 1),
-  }
-  gift_card.mint(
-    CreateGiftCard { token_name: token_name },
-    mock_policy_id,
-    tx,
-  )
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_input()],
+      mint: assets.from_asset(mock_policy_id, token, 1),
+    }
+  // Note: parameterized validator — pass params first, then handler args
+  gift_card.mint(mock_utxo_ref, token, CreateGiftCard, mock_policy_id, tx)
 }
 
 test cannot_mint_without_consuming_utxo() fail {
-  let tx = Transaction {
-    ..transaction.placeholder,
-    inputs: [],  // UTxO not consumed
-    mint: assets.from_asset(mock_policy_id, token_name, 1),
-  }
-  gift_card.mint(
-    CreateGiftCard { token_name: token_name },
-    mock_policy_id,
-    tx,
-  )
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [],
+      mint: assets.from_asset(mock_policy_id, token, 1),
+    }
+  gift_card.mint(mock_utxo_ref, token, CreateGiftCard, mock_policy_id, tx)
 }
 
 test cannot_mint_more_than_one() fail {
-  let tx = Transaction {
-    ..transaction.placeholder,
-    inputs: [
-      Input {
-        output_reference: mock_utxo_ref,
-        output: Output {
-          address: address.from_verification_key(#"aabb"),
-          value: assets.from_lovelace(5_000_000),
-          datum: NoDatum,
-          reference_script: None,
-        },
-      },
-    ],
-    mint: assets.from_asset(mock_policy_id, token_name, 2),  // 2 tokens
-  }
-  gift_card.mint(
-    CreateGiftCard { token_name: token_name },
-    mock_policy_id,
-    tx,
-  )
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_input()],
+      mint: assets.from_asset(mock_policy_id, token, 2),
+    }
+  gift_card.mint(mock_utxo_ref, token, CreateGiftCard, mock_policy_id, tx)
 }
 
+test cannot_mint_wrong_token_name() fail {
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_input()],
+      mint: assets.from_asset(mock_policy_id, "WRONG", 1),
+    }
+  gift_card.mint(mock_utxo_ref, token, CreateGiftCard, mock_policy_id, tx)
+}
+
+// --- Mint: RedeemGiftCard Tests ---
+
 test redeem_burns_token() {
-  let tx = Transaction {
-    ..transaction.placeholder,
-    mint: assets.from_asset(mock_policy_id, token_name, -1),
-  }
-  gift_card.mint(
-    RedeemGiftCard { token_name: token_name },
-    mock_policy_id,
-    tx,
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      mint: assets.from_asset(mock_policy_id, token, -1),
+    }
+  gift_card.mint(mock_utxo_ref, token, RedeemGiftCard, mock_policy_id, tx)
+}
+
+test redeem_fails_if_not_burning() fail {
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      mint: assets.from_asset(mock_policy_id, token, 1),
+    }
+  gift_card.mint(mock_utxo_ref, token, RedeemGiftCard, mock_policy_id, tx)
+}
+
+// --- Spend Tests ---
+
+test spend_with_burn_succeeds() {
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      mint: assets.from_asset(mock_policy_id, token, -1),
+    }
+  gift_card.spend(mock_utxo_ref, token, None, Void, mock_utxo_ref, tx)
+}
+
+test spend_without_burn_fails() fail {
+  gift_card.spend(
+    mock_utxo_ref,
+    token,
+    None,
+    Void,
+    mock_utxo_ref,
+    transaction.placeholder,
   )
 }
 
@@ -177,31 +192,32 @@ test redeem_burns_token() {
 
 use aiken/fuzz
 
-test prop_create_requires_utxo(
-  fake_ref via fuzz.output_reference(),
+test prop_create_requires_specific_utxo(
+  fake_txid via fuzz.bytearray_fixed(32),
 ) fail {
   // Random UTxO ref should never match our required ref
-  // (overwhelming probability for random 32-byte tx ids)
-  let tx = Transaction {
-    ..transaction.placeholder,
-    inputs: [
-      Input {
-        output_reference: fake_ref,
-        output: Output {
-          address: address.from_verification_key(#"aabb"),
-          value: assets.from_lovelace(5_000_000),
-          datum: NoDatum,
-          reference_script: None,
+  // Note: fuzz simple types in `via`, construct complex values in body
+  let fake_ref =
+    OutputReference { transaction_id: fake_txid, output_index: 0 }
+  let tx =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [
+        Input {
+          output_reference: fake_ref,
+          output: Output {
+            address: address.from_verification_key(
+              #"aabbccddee112233445566778899001122334455667788990011223344556677",
+            ),
+            value: assets.from_lovelace(5_000_000),
+            datum: NoDatum,
+            reference_script: None,
+          },
         },
-      },
-    ],
-    mint: assets.from_asset(mock_policy_id, token_name, 1),
-  }
-  gift_card.mint(
-    CreateGiftCard { token_name: token_name },
-    mock_policy_id,
-    tx,
-  )
+      ],
+      mint: assets.from_asset(mock_policy_id, token, 1),
+    }
+  gift_card.mint(mock_utxo_ref, token, CreateGiftCard, mock_policy_id, tx)
 }
 ```
 
@@ -209,9 +225,12 @@ test prop_create_requires_utxo(
 
 1. **Multi-purpose validator** — `mint` and `spend` in one `validator` block
 2. **One-shot minting** — consuming a specific UTxO guarantees uniqueness
-3. **Parameterized validator** — `utxo_ref` baked in at deployment
+3. **Parameterized validator** — `utxo_ref` and `token_name` baked in at deployment
 4. **NFT authentication** — spending requires burning the corresponding token
 5. **Atomic operations** — mint+lock and burn+unlock happen in single transactions
+6. **Test calling convention** — parameterized validators pass params first: `gift_card.mint(param1, param2, redeemer, policy_id, tx)`
+7. **Spend without own policy_id** — spend handler can't access its own policy_id; use `assets.flatten(tx.mint)` with tuple access (`entry.3rd`)
+8. **Simple fuzzer args** — fuzz `ByteArray` in `via`, construct `OutputReference` in body
 
 ## Security Notes
 
