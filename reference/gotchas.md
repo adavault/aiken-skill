@@ -523,6 +523,14 @@ SLOT=$(curl -s http://localhost:1442/v1/checkpoints \
   | python3 -c "import json,sys; print(json.load(sys.stdin)[-1]['slot_no'])")
 ```
 
+### Kupo PUT can stall chain sync
+
+A long-running `PUT /v1/patterns/` re-index can prevent Kupo from advancing
+to new blocks. Symptoms: `most_recent_checkpoint` stops advancing, error 3117
+"unknown UTxO references" because Kupo returns UTxOs the node has already
+consumed. Fix: kill the stale curl process on the server, then
+`docker restart kupo` to resume syncing.
+
 ### `List<Pair<K,V>>` compiles to Plutus map encoding
 
 Aiken's `List<Pair<ByteArray, Int>>` becomes a map type in the blueprint.

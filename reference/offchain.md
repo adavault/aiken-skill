@@ -667,7 +667,7 @@ verify and burn can run independently.
 | `Digest method not supported` | Node.js 20 no blake2b256 | Use `blakejs` npm package |
 | `ConflictingOptionsException` | Changed Kupo `--match` on existing DB | Use HTTP API `PUT /v1/patterns/` or nuke DB and restart |
 | UTxO not found after submit | Kupo hasn't indexed the new block yet | Wait ~30s for next block, or query Kupo API directly to verify |
-| `unknown UTxO references` (3117) | UTxO consumed by another tx in same block | Wait for block confirmation (~30s), retry with fresh UTxO set |
+| `unknown UTxO references` (3117) | UTxO consumed, or Kupo stale (PUT stalled sync) | Restart Kupo if checkpoint stuck; retry with fresh UTxO set |
 | `submitted too early` | `invalidBefore` slot ahead of ledger tip | Use `currentSlot - 60` safety margin for clock skew |
 | `Insufficient lovelace` on continuing output | No ADA left for fees after script output | Add `.selectUtxosFrom(walletUtxos)` for fee coverage |
 | Extraneous scripts (3104) | Input selector consumed UTxO with reference script | Exclude reference script UTxOs from `selectUtxosFrom()` |
@@ -696,6 +696,10 @@ curl -X PUT "http://localhost:1442/v1/patterns/${SCRIPT_HASH}/*" \
 - `slot_no: 0` is beyond the safe zone — use a recent checkpoint slot
 - Kupo may return 503 "too busy" during re-indexing — wait 60s and retry
 - Multiple rapid pattern registrations can overwhelm Kupo — space them out
+- A long-running PUT can stall Kupo's chain sync — if `most_recent_checkpoint`
+  stops advancing, kill the stale curl and `docker restart kupo`
+- Stale Kupo = stale UTxOs → error 3117 "unknown UTxO references" because
+  the node has consumed UTxOs that Kupo still reports as unspent
 - Verify registration: `GET /v1/patterns` should include your credential
 
 ## Complex Datum Encoding Patterns
