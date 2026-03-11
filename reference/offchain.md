@@ -394,6 +394,96 @@ await txBuilder
 - Preprod: slot 0 = 1654041600 (Jun 2022), 1s/slot
 - Mainnet: use `ogmios.querySystemStart()` and account for Byron/Shelley eras
 
+### Continuing Output (State Machine / Check-In Pattern)
+
+When spending a script UTxO and sending a new output back to the same script
+address with updated datum (state transitions, check-ins, counter increments):
+
+```typescript
+await txBuilder
+  .spendingPlutusScriptV3()
+  .txIn(lockedUtxo.input.txHash, lockedUtxo.input.outputIndex)
+  .txInScript(scriptCbor)
+  .txInInlineDatumPresent()
+  .txInRedeemerValue(redeemer, "JSON")
+  // Continuing output: same script address, updated datum
+  .txOut(scriptAddress, [
+    { unit: "lovelace", quantity: lockAmount },
+  ])
+  .txOutInlineDatumValue(newDatum, "JSON")
+  .txInCollateral(collateralTxHash, collateralTxIndex)
+  .requiredSignerHash(keyHashHex)
+  .changeAddress(walletAddress)
+  .signingKey(signingKeyHex)
+  // CRITICAL: selectUtxosFrom required for fee coverage
+  .selectUtxosFrom(walletUtxos)
+  .complete();
+```
+
+**Why `selectUtxosFrom(walletUtxos)` is needed:** When all the ADA from the
+script input goes to the continuing output, there's nothing left for fees.
+The tx builder needs wallet UTxOs to cover fees. Without this, you get
+"Insufficient lovelace" or the tx builder silently fails.
+
+### Withdrawal Transaction (Withdraw-Zero Pattern)
+
+The withdraw-zero pattern uses a withdrawal validator as a transaction-level
+check. Register the staking credential, then include a zero-withdrawal in
+transactions that need the check.
+
+```typescript
+import { WithdrawalBlueprint } from "@meshsdk/core";
+
+// Setup: derive script hash and reward address
+const withdrawBlueprint = new WithdrawalBlueprint("V3", networkId);
+withdrawBlueprint.noParamScript(compiledCode);
+
+const withdrawScriptHash = withdrawBlueprint.hash;
+const withdrawScriptCbor = withdrawBlueprint.cbor;
+const rewardAddress = withdrawBlueprint.address;  // bech32 stake_test1...
+```
+
+**Registration is permissionless in Conway:** No script witness, redeemer, or
+collateral needed:
+
+```typescript
+await txBuilder
+  .registerStakeCertificate(rewardAddress)
+  .changeAddress(walletAddress)
+  .signingKey(signingKeyHex)
+  .selectUtxosFrom(utxos)
+  .complete();
+```
+
+**Including the withdraw-zero in a transaction:**
+
+```typescript
+await txBuilder
+  // Normal spend from the guarded script
+  .spendingPlutusScriptV3()
+  .txIn(lockedUtxo.input.txHash, lockedUtxo.input.outputIndex)
+  .txInScript(spendScriptCbor)
+  .txInInlineDatumPresent()
+  .txInRedeemerValue(spendRedeemer, "JSON")
+  // Withdraw-zero: triggers the withdrawal validator
+  .withdrawalPlutusScriptV3()
+  .withdrawal(rewardAddress, "0")
+  .withdrawalScript(withdrawScriptCbor)
+  .withdrawalRedeemerValue(withdrawRedeemer, "JSON")
+  .txInCollateral(collateralTxHash, collateralTxIndex)
+  .requiredSignerHash(keyHashHex)
+  .changeAddress(walletAddress)
+  .signingKey(signingKeyHex)
+  .selectUtxosFrom(walletUtxos)
+  .complete();
+```
+
+**Deregistration limitation:** Aiken auto-generates a default `else` handler
+that fails for all unmatched purposes. If the script only has a `withdraw`
+handler, the `else` handler blocks deregistration (which is a `publish`
+action). Production fix: add an explicit `else` handler or leave the
+credential registered.
+
 ### Signing and Submission
 
 **Critical:** `complete()` only builds the transaction. You must call
@@ -573,3 +663,97 @@ verify and burn can run independently.
 | `Digest method not supported` | Node.js 20 no blake2b256 | Use `blakejs` npm package |
 | `ConflictingOptionsException` | Changed Kupo `--match` on existing DB | Use HTTP API `PUT /v1/patterns/` or nuke DB and restart |
 | UTxO not found after submit | Kupo hasn't indexed the new block yet | Wait ~30s for next block, or query Kupo API directly to verify |
+| `unknown UTxO references` (3117) | UTxO consumed by another tx in same block | Wait for block confirmation (~30s), retry with fresh UTxO set |
+| `submitted too early` | `invalidBefore` slot ahead of ledger tip | Use `currentSlot - 60` safety margin for clock skew |
+| `Insufficient lovelace` on continuing output | No ADA left for fees after script output | Add `.selectUtxosFrom(walletUtxos)` for fee coverage |
+
+## Kupo Runtime Pattern Management
+
+When deploying new contracts, register their script credentials with Kupo via
+the HTTP API (no restart needed):
+
+```bash
+# Get a recent slot for rollback_to (must be within 36h safe zone)
+SLOT=$(curl -s http://localhost:1442/v1/checkpoints \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)[-1]['slot_no'])")
+
+# Register the script credential
+curl -X PUT "http://localhost:1442/v1/patterns/${SCRIPT_HASH}/*" \
+  -H "Content-Type: application/json" \
+  -d "{\"rollback_to\":{\"slot_no\":${SLOT}}}"
+```
+
+**Gotchas:**
+- `slot_no: 0` is beyond the safe zone — use a recent checkpoint slot
+- Kupo may return 503 "too busy" during re-indexing — wait 60s and retry
+- Multiple rapid pattern registrations can overwhelm Kupo — space them out
+- Verify registration: `GET /v1/patterns` should include your credential
+
+## Complex Datum Encoding Patterns
+
+### List of Pairs (Aiken `List<Pair<K, V>>`)
+
+Aiken's `List<Pair<ByteArray, Int>>` compiles to a Plutus map type. Use
+the map encoding in JSON format:
+
+```typescript
+// Aiken: beneficiaries: List<Pair<ByteArray, Int>>
+// JSON encoding:
+{
+  map: [
+    { k: { bytes: "aabb..." }, v: { int: 5000 } },
+    { k: { bytes: "ccdd..." }, v: { int: 3000 } },
+  ]
+}
+```
+
+### Nested List (Aiken `List<ByteArray>`)
+
+```typescript
+// Aiken: signers: List<ByteArray>
+{ list: [{ bytes: "aabb..." }, { bytes: "ccdd..." }] }
+
+// Aiken: allowed_pools: List<ByteArray>
+{ list: [{ bytes: poolHash1 }, { bytes: poolHash2 }] }
+```
+
+### Bool Encoding
+
+```typescript
+// Aiken True = ConStr1, False = ConStr0
+{ constructor: 1, fields: [] }  // True
+{ constructor: 0, fields: [] }  // False
+```
+
+## E2E Test Patterns (Verified on Preview Testnet)
+
+The following patterns have been validated end-to-end across 13+ contracts
+with 37+ on-chain operations on preview testnet.
+
+### Contract Pattern Coverage
+
+| Pattern | Contract | Operations | Key Off-Chain Technique |
+|---------|----------|-----------|------------------------|
+| Simple mint+burn | Notary | notarize, verify, burn | MintingBlueprint, one-shot minting |
+| Time-locked spend | Vesting | lock, withdraw, claim | invalidBefore/invalidHereafter slots |
+| One-shot mint+spend | Gift Card | create, check, redeem | Combined mint+spend tx |
+| Multi-redeemer spend | Escrow | lock, complete, cancel, refund | Different redeemer constructors |
+| Multi-sig spend | Multi-Sig | lock, approve | List datum encoding for signers |
+| Continuing output | State Machine | lock, increment, reset | selectUtxosFrom for fees |
+| Parameterized multi-handler | NFT Vault | create, check, close | MintingBlueprint + SpendingBlueprint same params |
+| Withdraw-zero | Withdraw Zero | register, lock, batch-spend | WithdrawalBlueprint, permissionless registration |
+| Time + continuing output | Dead Man's Switch | lock, withdraw, checkin | invalidBefore safety margin, datum update |
+| Output payment check | Marketplace | list, buy, cancel | Explicit txOut to seller address |
+| Pair encoding + time | Multi-Beneficiary | lock, withdraw, claim | Map encoding, percentage calculation |
+| Message redeemer | Hello World | lock, unlock | ByteArray redeemer encoding |
+| Tx-level mint validation | TVMP | mint-receipt | Non-parameterized MintingBlueprint |
+
+### UTxO Contention
+
+When running multiple tests against the same wallet, UTxOs consumed by one
+transaction may not be confirmed when the next transaction tries to use them.
+This causes "unknown UTxO references" (error code 3117).
+
+**Prevention:** Run tests sequentially with ~30s between operations that
+depend on previous tx confirmation. Never submit two transactions from the
+same wallet in the same block unless they use completely disjoint UTxO sets.

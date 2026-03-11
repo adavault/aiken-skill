@@ -422,3 +422,98 @@ const keyHash = Buffer.from(addrBytes.slice(1, 29)).toString("hex");
 const addrHex = usedAddr.toBytes() as unknown as string;
 const keyHash = addrHex.slice(2, 58);
 ```
+
+### `selectUtxosFrom()` required for continuing outputs
+
+When spending a script UTxO and sending all ADA back to the script (state
+machine, check-in), there's no ADA left for fees. The tx builder needs
+wallet UTxOs explicitly:
+
+```typescript
+// BAD — "Insufficient lovelace" or silent failure
+await txBuilder
+  .spendingPlutusScriptV3()
+  .txIn(scriptUtxo.input.txHash, scriptUtxo.input.outputIndex)
+  // ... script chain ...
+  .txOut(scriptAddress, [{ unit: "lovelace", quantity: "5000000" }])
+  .complete();
+
+// GOOD — wallet UTxOs available for fee coverage
+const walletUtxos = await kupo.fetchAddressUTxOs(walletAddress);
+await txBuilder
+  // ... same chain ...
+  .selectUtxosFrom(walletUtxos)
+  .complete();
+```
+
+### `invalidBefore` needs 60s safety margin
+
+Setting `invalidBefore` to the exact current slot causes "submitted too early"
+due to clock skew between the local machine and the ledger tip:
+
+```typescript
+// BAD — may fail with "submitted too early"
+const currentSlot = Math.floor(Date.now() / 1000) - 1666656000;
+txBuilder.invalidBefore(currentSlot);
+
+// GOOD — 60s safety margin
+txBuilder.invalidBefore(currentSlot - 60);
+```
+
+### UTxO contention across sequential transactions
+
+Two transactions submitted in the same block that reference the same UTxO will
+cause "unknown UTxO references" (code 3117) for the second. Wait ~30s (next
+block) between dependent transactions.
+
+### Conway staking registration is permissionless
+
+`registerStakeCertificate(rewardAddress)` needs no script witness, no
+redeemer, and no collateral. It's a simple certificate in the tx body:
+
+```typescript
+// No .spendingPlutusScriptV3(), no .txInCollateral() needed
+await txBuilder
+  .registerStakeCertificate(rewardAddress)
+  .changeAddress(walletAddress)
+  .signingKey(signingKeyHex)
+  .selectUtxosFrom(utxos)
+  .complete();
+```
+
+### Aiken `else` handler blocks unmatched purposes
+
+Aiken auto-generates a default `else` handler that fails for all unmatched
+handler purposes. If your script only has a `withdraw` handler, you cannot
+deregister the staking credential (a `publish` action) because the `else`
+handler rejects it. Fix: add an explicit `else` handler or accept the
+credential stays registered.
+
+### Kupo `rollback_to` must be within 36h safe zone
+
+Using `slot_no: 0` returns a "hint" warning instead of registering the
+pattern. Always use a recent slot from the checkpoints API:
+
+```bash
+SLOT=$(curl -s http://localhost:1442/v1/checkpoints \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)[-1]['slot_no'])")
+```
+
+### `List<Pair<K,V>>` compiles to Plutus map encoding
+
+Aiken's `List<Pair<ByteArray, Int>>` becomes a map type in the blueprint.
+Use `{ map: [{ k: ..., v: ... }] }` not `{ list: [{ list: [...] }] }`:
+
+```typescript
+// BAD — wrong encoding for List<Pair<...>>
+{ list: [{ list: [{ bytes: "aa" }, { int: 50 }] }] }
+
+// GOOD — map encoding
+{ map: [{ k: { bytes: "aa" }, v: { int: 50 } }] }
+```
+
+### Multi-handler validators share the same script hash
+
+For validators with multiple handlers (e.g., `mint` + `spend`), the policy ID
+equals the spend script hash — they're the same compiled code. Use the same
+parameter values for both `MintingBlueprint` and `SpendingBlueprint`.
