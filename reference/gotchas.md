@@ -383,6 +383,31 @@ import WebSocket from "ws";
 (globalThis as any).WebSocket = WebSocket;
 ```
 
+### `SpendingBlueprint` requires `noParamScript()` for non-parameterized validators
+
+For spend validators without parameters, use `noParamScript()` — not `paramScript()`
+with empty params:
+
+```typescript
+// Non-parameterized
+const blueprint = new SpendingBlueprint("V3", 0, "");
+blueprint.noParamScript(compiledCode);
+
+// Parameterized
+const blueprint = new SpendingBlueprint("V3", 0, "");
+blueprint.paramScript(compiledCode, [{ bytes: ownerHash }], "JSON");
+```
+
+### Kupo `--match` patterns cannot change on existing DB
+
+Changing `--match` arguments on a Kupo instance with an existing database causes
+`ConflictingOptionsException`. Two options:
+
+1. **HTTP API** (no downtime): `PUT /v1/patterns/{credential}/*` with
+   `{"rollback_to": {"slot_no": N}}` body. Kupo re-indexes from that slot.
+2. **Nuke DB** (requires restart): Delete the database volume and restart
+   with all needed credentials from origin.
+
 ### `toBytes()` returns hex string, not Uint8Array
 
 `Address.toBytes()` returns a hex string. Don't wrap it in

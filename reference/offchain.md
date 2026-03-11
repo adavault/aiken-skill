@@ -299,6 +299,101 @@ await txBuilder
   .complete();
 ```
 
+### Spending Transaction (Spend Validator)
+
+```typescript
+import { SpendingBlueprint } from "@meshsdk/core";
+
+// Non-parameterized spend validator
+const blueprint = new SpendingBlueprint("V3", 0, "");
+blueprint.noParamScript(compiledCode);
+
+// Parameterized spend validator (same params as minting counterpart)
+const blueprint = new SpendingBlueprint("V3", 0, "");
+blueprint.paramScript(compiledCode, params, "JSON");
+
+const scriptHash = blueprint.hash;
+const scriptCbor = blueprint.cbor;
+const scriptAddress = blueprint.address;
+```
+
+Build the spending transaction:
+
+```typescript
+await txBuilder
+  // Spend the script UTxO — order matters: spendingPlutusScriptV3 first
+  .spendingPlutusScriptV3()
+  .txIn(lockedUtxo.input.txHash, lockedUtxo.input.outputIndex)
+  .txInScript(scriptCbor)
+  .txInInlineDatumPresent()           // reads datum from the UTxO
+  .txInRedeemerValue(redeemer, "JSON")
+  // Collateral
+  .txInCollateral(collateralTxHash, collateralTxIndex)
+  // Required signer (if validator checks tx.extra_signatories)
+  .requiredSignerHash(keyHashHex)
+  .changeAddress(walletAddress)
+  .signingKey(signingKeyHex)
+  .complete();
+```
+
+### Combined Mint + Spend Transaction
+
+Some patterns require both minting and spending in the same transaction (e.g.,
+gift card redeem: burn the NFT + unlock the ADA). Chain both handlers:
+
+```typescript
+await txBuilder
+  // 1. Spend the script UTxO (unlock ADA)
+  .spendingPlutusScriptV3()
+  .txIn(lockedUtxo.input.txHash, lockedUtxo.input.outputIndex)
+  .txInScript(spendScriptCbor)
+  .txInInlineDatumPresent()
+  .txInRedeemerValue(spendRedeemer, "JSON")
+  // 2. Burn the NFT
+  .mintPlutusScriptV3()
+  .mint("-1", policyId, tokenName)
+  .mintingScript(mintScriptCbor)
+  .mintRedeemerValue(burnRedeemer, "JSON")
+  // Shared requirements
+  .txInCollateral(collateralTxHash, collateralTxIndex)
+  .requiredSignerHash(keyHashHex)
+  .changeAddress(walletAddress)
+  .signingKey(signingKeyHex)
+  .complete();
+```
+
+### Time-Locked Transaction (Validity Range)
+
+For validators that check `interval.is_entirely_after(tx.validity_range, deadline)`,
+set `invalidBefore` to a slot after the deadline:
+
+```typescript
+// Preview testnet: slot 0 = 2022-10-25T00:00:00Z = 1666656000 Unix seconds
+// 1 second per slot
+const PREVIEW_SLOT_ZERO_UNIX = 1666656000;
+
+function posixMsToSlot(posixMs: number): number {
+  return Math.floor(posixMs / 1000) - PREVIEW_SLOT_ZERO_UNIX;
+}
+
+const deadlineSlot = posixMsToSlot(deadlineMs);
+const invalidBeforeSlot = deadlineSlot + 1;    // ensures "entirely after"
+const invalidHereafterSlot = currentSlot + 900; // 15 min TTL
+
+await txBuilder
+  .spendingPlutusScriptV3()
+  // ... script input chain ...
+  .invalidBefore(invalidBeforeSlot)
+  .invalidHereafter(invalidHereafterSlot)
+  // ... collateral, signer, change, signing ...
+  .complete();
+```
+
+**Slot conversion varies by network:**
+- Preview: slot 0 = 1666656000 (Oct 2022), 1s/slot
+- Preprod: slot 0 = 1654041600 (Jun 2022), 1s/slot
+- Mainnet: use `ogmios.querySystemStart()` and account for Byron/Shelley eras
+
 ### Signing and Submission
 
 **Critical:** `complete()` only builds the transaction. You must call
@@ -476,3 +571,5 @@ verify and burn can run independently.
 | `unsuitableCollateralValue` | Collateral UTxO has native tokens | Use a pure-ADA UTxO for `.txInCollateral()` |
 | `No UTxOs found` | Wrong address type | Use `getEnterpriseAddress()` for enterprise wallets |
 | `Digest method not supported` | Node.js 20 no blake2b256 | Use `blakejs` npm package |
+| `ConflictingOptionsException` | Changed Kupo `--match` on existing DB | Use HTTP API `PUT /v1/patterns/` or nuke DB and restart |
+| UTxO not found after submit | Kupo hasn't indexed the new block yet | Wait ~30s for next block, or query Kupo API directly to verify |
