@@ -202,13 +202,23 @@ same key as the datum owner), the property test itself fails. With 28 bytes
 of entropy (2^224), collisions are astronomically unlikely but theoretically
 possible.
 
-### `fuzz.both()` for multiple fuzz parameters
+### Tests can only have 0 or 1 argument
 
-Combine two fuzzers into a tuple:
+Aiken tests accept at most one parameter. Multiple fuzz parameters cause
+`aiken::check::illegal::test::arity` — and the compiler may silently exit
+with code 1 and **no error output** when stdout is not a TTY (e.g., in CI
+or piped through redirects). Use `script -q -c "aiken build" /dev/null` to
+force TTY output if errors disappear.
+
+Use `fuzz.both()` to combine two fuzzers into a tuple:
 
 ```aiken
-test prop_test(params via fuzz.both(fuzz.bytearray_fixed(28), fuzz.int())) {
-  let (key, amount) = params
+// BAD — 2 arguments, compiler error (may be silent!)
+test prop_test(t1 via fuzz.int(), t2 via fuzz.int()) { ... }
+
+// GOOD — single tuple argument
+test prop_test(params via fuzz.both(fuzz.int(), fuzz.int())) {
+  let (t1, t2) = params
   ...
 }
 ```
@@ -281,6 +291,20 @@ use aiken/fuzz
 
 Aiken warns on unused imports. Clean them up before finalizing — they won't
 fail the build but they add noise.
+
+### `expect` vs `let` for side-effect booleans
+
+Use `expect` (not `let`) when you want a boolean expression's `?` trace to
+actually execute. Unused `let` bindings are **fully optimized away** — they
+produce no side effects:
+
+```aiken
+// BAD — _time_ok is unused, entire expression (including ?) is removed
+let _time_ok = interval.is_entirely_after(tx.validity_range, t)?
+
+// GOOD — expect enforces the side effect
+expect interval.is_entirely_after(tx.validity_range, t)?
+```
 
 ### `?` is postfix only
 
