@@ -602,6 +602,126 @@ const invalidBeforeSlot = currentSlot - 180;
 const currentTimeMs = slotToPosixMs(invalidBeforeSlot) - 1;
 ```
 
+### Manual exUnits to bypass conservative evaluator
+
+The Ogmios evaluator can over-estimate execution costs, especially with 4+
+validators in a single transaction (default budget is 7M mem / 3B steps
+per redeemer = 28M total for 4 scripts, far exceeding the 16.5M protocol
+limit). Remove the evaluator and pass explicit `exUnits` as the 3rd argument:
+
+```typescript
+// Remove evaluator from constructor
+const txBuilder = new MeshTxBuilder({
+  fetcher: kupo,
+  submitter: ogmios,
+  // No evaluator — using explicit exUnits
+});
+
+// Set per-redeemer budgets that sum within protocol limits (16.5M mem, 10B steps)
+.mintRedeemerValue(redeemer, "JSON", { mem: 3_000_000, steps: 1_500_000_000 })
+.withdrawalRedeemerValue(redeemer, "JSON", { mem: 8_000_000, steps: 4_000_000_000 })
+```
+
+Without the evaluator, `evaluateRedeemers()` is a no-op — your specified
+budgets are used directly. If too low, the script fails on-chain and
+collateral is seized. Start generous and tighten after observing actual costs.
+
+### Reference script UTxOs cause "extraneous scripts" (error 3104)
+
+If the input selector consumes a UTxO that contains a reference script,
+AND the same script is included inline in the tx, the node reports
+"extraneous scripts". The fix: exclude all reference script UTxOs from the
+selectable pool:
+
+```typescript
+const excludedIds = new Set([/* data UTxOs, reference script UTxOs */]);
+if (refScriptsTxHash) {
+  for (let i = 0; i < numOutputs; i++) {
+    excludedIds.add(`${refScriptsTxHash}#${i}`);
+  }
+}
+const selectable = walletUtxos.filter(
+  (u) => !excludedIds.has(`${u.input.txHash}#${u.input.outputIndex}`)
+);
+txBuilder.selectUtxosFrom(selectable);
+```
+
+This also applies to collateral UTxOs — if your collateral UTxO has a
+reference script, it can trigger the same error.
+
+### Collateral return for non-pure-ADA UTxOs
+
+When no pure-ADA UTxOs are available (common after deploying reference
+scripts), use Conway collateral return instead of failing:
+
+```typescript
+// Pick the UTxO with the most ADA
+const collateral = selectableUtxos.reduce((best, u) => {
+  const ada = BigInt(u.output.amount.find(a => a.unit === "lovelace")?.quantity || "0");
+  const bestAda = BigInt(best.output.amount.find(a => a.unit === "lovelace")?.quantity || "0");
+  return ada > bestAda ? u : best;
+}, selectableUtxos[0]);
+
+txBuilder
+  .txInCollateral(collateral.input.txHash, collateral.input.outputIndex)
+  .setTotalCollateral("5000000")
+  .setCollateralReturnAddress(walletAddress);
+```
+
+The node returns excess ADA and non-ADA tokens to the collateral return address.
+
+### Input selector destroys inline datums
+
+When the input selector consumes a UTxO with an inline datum as a fee input,
+the change output **loses the datum**. This silently breaks registry nodes,
+state machine UTxOs, or any UTxO that carries important data. Always exclude
+datum-bearing UTxOs from `selectUtxosFrom()`:
+
+```typescript
+// Exclude UTxOs that carry important datums
+const excludedIds = new Set([
+  `${registryUtxo.input.txHash}#${registryUtxo.input.outputIndex}`,
+  `${stateUtxo.input.txHash}#${stateUtxo.input.outputIndex}`,
+]);
+txBuilder.selectUtxosFrom(walletUtxos.filter(
+  (u) => !excludedIds.has(`${u.input.txHash}#${u.input.outputIndex}`)
+));
+```
+
+If a datum-bearing UTxO is accidentally consumed, you must re-create it
+with a new transaction that attaches the correct inline datum.
+
+### `.txIn()` scriptSize (5th param) required for offline UTxOs
+
+When providing UTxO info manually (for UTxOs not indexed by Kupo), the
+5th parameter `scriptSize` must be passed — even as `0`. Without it,
+`isInputInfoComplete()` returns false and MeshTxBuilder tries to fetch
+from the provider, failing with "Couldn't find value information":
+
+```typescript
+// BAD — scriptSize undefined, triggers Kupo lookup
+.txIn(txHash, outputIndex, amount, address)
+
+// GOOD — explicit scriptSize=0 uses provided values
+.txIn(txHash, outputIndex, amount, address, 0)
+```
+
+### `.withdrawalTxInReference()` crashes MeshTxBuilder
+
+Using reference scripts for withdrawal validators causes "Cannot read
+properties of undefined (reading 'length')" at `completeScriptInfo`.
+This is a MeshTxBuilder limitation. Use inline scripts for withdrawals
+instead, combined with manual exUnits to stay within budget:
+
+```typescript
+// BAD — crashes during complete()
+.withdrawalTxInReference(refTxHash, refTxIndex)
+
+// GOOD — inline script with manual exUnits
+.withdrawalScript(scriptCbor)
+.withdrawalRedeemerValue(redeemer, "JSON", { mem: 2_000_000, steps: 1_000_000_000 })
+```
+
 ### CIP-68 spend handler must branch on redeemer variant
 
 CIP-68 spend handlers must check the redeemer variant — `Burn` actions need to

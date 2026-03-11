@@ -6,8 +6,9 @@ and integration testing on preview/preprod testnets.
 
 All patterns verified against MeshJS v1.9.x-beta and Aiken v1.1.21.
 
-For working E2E test examples (16 contracts, 45 operations on preview testnet),
-see [adavault/cardano-notary](https://github.com/adavault/cardano-notary) `test/` directory.
+For working E2E test examples, see:
+- [adavault/cardano-notary](https://github.com/adavault/cardano-notary) `test/` — 16 contracts, 45 operations on preview
+- [adavault/programmable-tokens](https://github.com/adavault/programmable-tokens) `test/` — CIP-113 full lifecycle (12 validators, 4 E2E phases)
 
 ## Provider Setup
 
@@ -669,6 +670,11 @@ verify and burn can run independently.
 | `unknown UTxO references` (3117) | UTxO consumed by another tx in same block | Wait for block confirmation (~30s), retry with fresh UTxO set |
 | `submitted too early` | `invalidBefore` slot ahead of ledger tip | Use `currentSlot - 60` safety margin for clock skew |
 | `Insufficient lovelace` on continuing output | No ADA left for fees after script output | Add `.selectUtxosFrom(walletUtxos)` for fee coverage |
+| Extraneous scripts (3104) | Input selector consumed UTxO with reference script | Exclude reference script UTxOs from `selectUtxosFrom()` |
+| Unsuitable collateral with tokens (3133) | No pure-ADA UTxO for collateral | Use `setTotalCollateral()` + `setCollateralReturnAddress()` |
+| Script failed unexpectedly (3136) | Script executed but returned False | Check datums exist on reference inputs, verify redeemer indices |
+| Execution budget exceeded (3134) | Evaluator over-estimated or too many inline scripts | Use manual `exUnits` per redeemer, remove evaluator |
+| Couldn't find value information | UTxO not indexed by Kupo | Pass all 5 `.txIn()` params including `scriptSize: 0` |
 
 ## Kupo Runtime Pattern Management
 
@@ -753,6 +759,7 @@ with 45 on-chain operations on preview testnet.
 | Index-based I/O linking | UTxO Indexer | lock, update | Sorted input index in redeemer |
 | Validity range normalisation | Validity Range | lock, spend-after, lock-again, spend-before | invalidBefore/invalidHereafter with safety margin |
 | Pool whitelist enforcement | Pool Restriction | lock, unlock | List datum, certificate checking |
+| CIP-113 programmable tokens | Programmable Tokens | bootstrap, register, deploy, mint, transfer | Multi-validator coordination, withdraw-zero, manual exUnits, reference input sorting |
 
 ### UTxO Contention
 
@@ -763,3 +770,162 @@ This causes "unknown UTxO references" (error code 3117).
 **Prevention:** Run tests sequentially with ~30s between operations that
 depend on previous tx confirmation. Never submit two transactions from the
 same wallet in the same block unless they use completely disjoint UTxO sets.
+
+## Multi-Validator Transactions (CIP-113 / Programmable Tokens)
+
+Complex protocols like CIP-113 require 3-4+ validators executing in a single
+transaction. This introduces coordination challenges absent from single-validator
+contracts.
+
+### Withdraw-Zero Coordination
+
+Multiple withdrawal validators can be invoked in one transaction. Each
+needs its own script/redeemer chain:
+
+```typescript
+await txBuilder
+  // Spend from script address
+  .spendingPlutusScriptV3()
+  .txIn(scriptUtxo.txHash, scriptUtxo.outputIndex, amount, address, 0)
+  .txInInlineDatumPresent()
+  .txInScript(spendScriptCbor)
+  .spendingReferenceTxInRedeemerValue(spendRedeemer, "JSON", exBudget.spend)
+  // Withdrawal 1: global coordinator
+  .withdrawalPlutusScriptV3()
+  .withdrawal(globalRewardAddr, "0")
+  .withdrawalScript(globalScriptCbor)
+  .withdrawalRedeemerValue(globalRedeemer, "JSON", exBudget.global)
+  // Withdrawal 2: transfer logic
+  .withdrawalPlutusScriptV3()
+  .withdrawal(transferRewardAddr, "0")
+  .withdrawalScript(transferScriptCbor)
+  .withdrawalRedeemerValue("", "Mesh", exBudget.transfer)
+  // ... rest of tx
+  .complete();
+```
+
+### Reference Input Sorting
+
+Cardano sorts reference inputs **lexicographically** by `(txHash, outputIndex)`.
+Redeemer indices that reference positions in the reference input list must
+match the sorted order, not insertion order:
+
+```typescript
+const refInputsSorted = [
+  { hash: ppUtxo.input.txHash, idx: ppUtxo.input.outputIndex, type: "pp" },
+  { hash: registryUtxo.input.txHash, idx: registryUtxo.input.outputIndex, type: "registry" },
+].sort((a, b) => {
+  if (a.hash < b.hash) return -1;
+  if (a.hash > b.hash) return 1;
+  return a.idx - b.idx;
+});
+const registryNodeIdx = refInputsSorted.findIndex((r) => r.type === "registry");
+
+// Use the sorted index in the redeemer
+const redeemer = {
+  constructor: 0,
+  fields: [
+    { list: [{ constructor: 0, fields: [{ int: registryNodeIdx }] }] },
+  ],
+};
+```
+
+### UTxO Exclusion Strategy
+
+Multi-validator transactions require careful UTxO management. The input
+selector must NOT consume:
+
+1. **Reference input UTxOs** — data UTxOs used as read-only references
+2. **Reference script UTxOs** — deployed scripts that conflict with inline copies
+3. **Datum-bearing UTxOs** — stateful UTxOs whose datums would be destroyed
+
+```typescript
+const excludedIds = new Set<string>();
+
+// Reference inputs (data)
+excludedIds.add(`${ppUtxo.input.txHash}#${ppUtxo.input.outputIndex}`);
+excludedIds.add(`${registryUtxo.input.txHash}#${registryUtxo.input.outputIndex}`);
+
+// Reference script UTxOs (if deployed)
+if (refScriptsTxHash) {
+  for (let i = 0; i < 5; i++) excludedIds.add(`${refScriptsTxHash}#${i}`);
+}
+
+const selectable = walletUtxos.filter(
+  (u) => !excludedIds.has(`${u.input.txHash}#${u.input.outputIndex}`)
+);
+txBuilder.selectUtxosFrom(selectable);
+```
+
+### Manual Execution Budget
+
+When the evaluator over-estimates (common with 4+ validators), remove it
+and set explicit per-redeemer budgets. Protocol limits on preview:
+16.5M mem / 10B steps total across all scripts.
+
+```typescript
+const txBuilder = new MeshTxBuilder({
+  fetcher: kupo,
+  submitter: ogmios,
+  // No evaluator — manual budgets
+});
+
+// Budget allocation example (4 validators, 15M total):
+const exBudget = {
+  mint:     { mem: 3_000_000, steps: 1_500_000_000 },  // ~350B script
+  global:   { mem: 8_000_000, steps: 4_000_000_000 },  // ~3.3KB script
+  minting:  { mem: 2_000_000, steps: 1_000_000_000 },  // ~185B script
+  transfer: { mem: 2_000_000, steps: 1_000_000_000 },  // ~213B script
+};
+
+.mintRedeemerValue(redeemer, "JSON", exBudget.mint)
+.withdrawalRedeemerValue(redeemer, "JSON", exBudget.global)
+```
+
+### Script Address UTxOs Not in Kupo
+
+When script outputs go to addresses not indexed by Kupo (e.g., programmable
+logic addresses with script payment credentials), MeshTxBuilder can't
+resolve UTxO info. Provide all 5 `.txIn()` parameters including `scriptSize`:
+
+```typescript
+// Construct UTxO info from known mint tx output
+const scriptUtxo = {
+  txHash: mintTxHash,
+  outputIndex: 0,
+  amount: [
+    { unit: "lovelace", quantity: "5000000" },
+    { unit: policyId + tokenName, quantity: "1000" },
+  ],
+  address: scriptAddress,
+};
+
+.spendingPlutusScriptV3()
+.txIn(scriptUtxo.txHash, scriptUtxo.outputIndex,
+      scriptUtxo.amount, scriptUtxo.address, 0)  // scriptSize=0 is critical
+```
+
+Or add the script credential to Kupo: `PUT /v1/patterns/{scriptHash}/*`
+
+### Building Script Addresses (Payment Script + Stake VK)
+
+For CIP-113 programmable logic addresses (script payment + VK stake):
+
+```typescript
+import { buildBaseAddress, CredentialType } from "@meshsdk/core-cst";
+import { serializeRewardAddress } from "@meshsdk/core";
+
+// Payment credential = script hash, Stake credential = VK hash
+function buildProgLogicAddress(
+  scriptHash: string, stakeVkHash: string, networkId: number
+): string {
+  const addr = buildBaseAddress(
+    networkId, scriptHash, stakeVkHash,
+    CredentialType.ScriptHash, CredentialType.KeyHash
+  );
+  return addr.toAddress().toBech32();
+}
+
+// Reward address for withdraw-zero (script stake credential)
+const rewardAddr = serializeRewardAddress(scriptHash, true, networkId);
+```
