@@ -517,3 +517,47 @@ Use `{ map: [{ k: ..., v: ... }] }` not `{ list: [{ list: [...] }] }`:
 For validators with multiple handlers (e.g., `mint` + `spend`), the policy ID
 equals the spend script hash — they're the same compiled code. Use the same
 parameter values for both `MintingBlueprint` and `SpendingBlueprint`.
+
+### `tx.inputs` are sorted — redeemer indices must match
+
+On Cardano, `tx.inputs` are sorted lexicographically by `(txHash, outputIndex)`.
+The UTxO indexer pattern (and any pattern using `list.at(tx.inputs, index)`)
+must account for this. When the tx builder auto-selects fee UTxOs, they may
+sort before the script UTxO, shifting its index.
+
+**Fix:** Determine the sort order at build time and set redeemer indices
+accordingly. Use explicit `.txIn()` for fee inputs so you control the ordering:
+
+```typescript
+// Determine where the script UTxO falls in sorted order
+const scriptRef = `${scriptUtxo.input.txHash}#${scriptUtxo.input.outputIndex}`;
+const feeRef = `${feeUtxo.input.txHash}#${feeUtxo.input.outputIndex}`;
+const scriptInputIndex = scriptRef < feeRef ? 0 : 1;
+
+const redeemer = {
+  constructor: 0,
+  fields: [
+    { int: scriptInputIndex },  // determined by sort order
+    { int: 0 },                 // output index (first txOut)
+  ],
+};
+
+await txBuilder
+  .spendingPlutusScriptV3()
+  .txIn(scriptUtxo.input.txHash, scriptUtxo.input.outputIndex)
+  // ... script chain ...
+  .txIn(feeUtxo.input.txHash, feeUtxo.input.outputIndex)  // explicit fee input
+  // ... rest of chain (no selectUtxosFrom needed) ...
+  .complete();
+```
+
+### `invalidBefore` needs 180s margin on preview
+
+The preview testnet ledger tip can lag 60-200s behind wall clock due to
+Poisson block distribution. Use `currentSlot - 180` (not 60) to avoid
+"submitted too early" errors:
+
+```typescript
+const currentSlot = Math.floor(Date.now() / 1000) - 1666656000;
+txBuilder.invalidBefore(currentSlot - 180);
+```

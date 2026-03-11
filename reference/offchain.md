@@ -727,8 +727,8 @@ the map encoding in JSON format:
 
 ## E2E Test Patterns (Verified on Preview Testnet)
 
-The following patterns have been validated end-to-end across 13+ contracts
-with 37+ on-chain operations on preview testnet.
+The following patterns have been validated end-to-end across 16 contracts
+with 45 on-chain operations on preview testnet.
 
 ### Contract Pattern Coverage
 
@@ -747,6 +747,9 @@ with 37+ on-chain operations on preview testnet.
 | Pair encoding + time | Multi-Beneficiary | lock, withdraw, claim | Map encoding, percentage calculation |
 | Message redeemer | Hello World | lock, unlock | ByteArray redeemer encoding |
 | Tx-level mint validation | TVMP | mint-receipt | Non-parameterized MintingBlueprint |
+| Index-based I/O linking | UTxO Indexer | lock, update | Sorted input index in redeemer |
+| Validity range normalisation | Validity Range | lock, spend-after, lock-again, spend-before | invalidBefore/invalidHereafter with safety margin |
+| Pool whitelist enforcement | Pool Restriction | lock, unlock | List datum, certificate checking |
 
 ### UTxO Contention
 
