@@ -585,3 +585,194 @@ Poisson block distribution. Use `currentSlot - 180` (not 60) to avoid
 const currentSlot = Math.floor(Date.now() / 1000) - 1666656000;
 txBuilder.invalidBefore(currentSlot - 180);
 ```
+
+### `invalidBefore` POSIX alignment for `is_entirely_after`
+
+When a validator checks `is_entirely_after(validity_range, current_time - 1)` and the
+redeemer carries `current_time`, derive it from the slot rather than `Date.now()`.
+Slot→POSIX conversion rounds to whole seconds; `Date.now()` has millisecond precision
+and can produce a value slightly ahead of the slot boundary, failing the check:
+
+```typescript
+// BAD — ms precision from Date.now() can exceed slot POSIX
+const currentTimeMs = Date.now() - 180_000;
+
+// GOOD — derive from the slot to guarantee alignment
+const invalidBeforeSlot = currentSlot - 180;
+const currentTimeMs = slotToPosixMs(invalidBeforeSlot) - 1;
+```
+
+### CIP-68 spend handler must branch on redeemer variant
+
+CIP-68 spend handlers must check the redeemer variant — `Burn` actions need to
+release the UTxO without requiring a continuing output. If the spend handler
+unconditionally demands a continuing output, burn transactions fail because
+the tokens are being destroyed:
+
+```aiken
+// BAD — unconditional continuing output check blocks burn
+spend(...) {
+  admin_signed && has_continuing_output
+}
+
+// GOOD — branch on redeemer
+spend(datum, redeemer, oref, tx) {
+  when redeemer is {
+    Burn { .. } -> admin_signed
+    _ -> admin_signed && has_continuing_output
+  }
+}
+```
+
+## Aiken Language & Stdlib
+
+### `use` imports must be at the top of the file
+
+All `use` statements must appear before the first non-import declaration
+(const, fn, type, validator, test). Adding a `use` statement mid-file
+(e.g., before test helpers) causes a parser error:
+
+```
+I found an unexpected token 'use'. I am looking for: const, fn, test, validator, ...
+```
+
+Add all imports needed by both the validator and its tests at the top.
+
+### `builtin.less_than_bytearray` for ByteArray comparison
+
+The `<` operator is not supported for `ByteArray`. Use the builtin:
+
+```aiken
+// BAD — type error
+a < b  // where a, b: ByteArray
+
+// GOOD
+use aiken/builtin
+builtin.less_than_bytearray(a, b)
+```
+
+Useful for sorted data structures (e.g., linked list key ordering).
+
+### `dict.union_with` in stdlib v3 uses CPS-style callbacks
+
+In stdlib v3.0.0, `dict.union_with` takes a `UnionStrategy` — a CPS-style
+callback, not a raw merge function. For nested dict merging (e.g., summing
+token quantities across policies):
+
+```aiken
+use aiken/collection/dict/strategy
+
+// Simple numeric merge — use strategy.sum()
+dict.union_with(a, b, strategy.sum())
+
+// Nested dict merge — CPS callback with keep/discard
+dict.union_with(a, b, fn(_key, val_a, val_b, keep, _discard) {
+  keep(dict.union_with(val_a, val_b, strategy.sum()))
+})
+```
+
+### `assets.tokens()` returns `Dict`, not `List`
+
+Use `dict.is_empty()` and `dict.to_pairs()`, not list operations:
+
+```aiken
+// BAD — type error
+let tokens = assets.tokens(value, cs)
+list.is_empty(tokens)
+
+// GOOD
+dict.is_empty(tokens)
+dict.to_pairs(tokens) == [Pair(expected_name, 1)]
+```
+
+### `expect <bool_expression>` fails the validator if False
+
+Aiken's `expect` on a Bool expression acts as `expect True = expr`. This is
+the idiomatic way to assert conditions in validators:
+
+```aiken
+// These are equivalent:
+expect has_currency_symbol(output.value, cs)
+expect True = has_currency_symbol(output.value, cs)
+
+// Both fail the transaction if the function returns False
+```
+
+### Validator files are separate compilation units
+
+Each `.ak` file in `validators/` is a separate compilation unit. You cannot
+reference one validator from another validator file:
+
+```aiken
+// validators/my_validator_test.ak — FAILS
+// Error: unknown module 'my_validator'
+my_validator.spend(...)
+
+// SOLUTION: put tests in the same file as the validator
+// validators/my_validator.ak
+validator my_validator { ... }
+test my_test() { my_validator.spend(...) }
+```
+
+Library files in `lib/` can be shared across validator files via `use`.
+
+### Record spread for cleaner datum comparison
+
+Use record spread to create expected values, avoiding field-by-field checks:
+
+```aiken
+// VERBOSE
+expect updated.key == original.key
+expect updated.next == new_key
+expect updated.field_a == original.field_a
+expect updated.field_b == original.field_b
+
+// CLEAN — spread original, override changed fields
+let expected = MyType { ..original, next: new_key }
+expect updated == expected
+```
+
+## Architectural Patterns
+
+### Sorted linked list with covering node proofs
+
+On-chain sorted linked lists use sentinel origin nodes and covering node
+proofs for O(1) membership verification:
+
+```aiken
+// Origin (sentinel): key = #"", next = #"" (or first real key)
+// Insert: find covering node where covering.key < new_key < covering.next
+// The empty bytearray is always less than any non-empty bytearray:
+//   builtin.less_than_bytearray(#"", #"anything") == True
+
+// Membership proof: TokenExists — node.key == query
+// Non-membership proof: TokenDoesNotExist — node.key < query < node.next
+```
+
+Insert splits a covering node into two outputs:
+1. Updated covering: `{ ..covering, next: new_key }`
+2. New node: `{ key: new_key, next: covering.next }`
+
+Security: count registry inputs during insert to prevent extra-node-spend
+attacks where an attacker spends unrelated nodes alongside a valid insert.
+
+### Return value vs `expect` for security-critical Bool checks
+
+When a function returns Bool and the result gates a security property,
+use `expect` instead of returning the Bool to the caller:
+
+```aiken
+// DANGEROUS — caller can silently ignore False
+fn check_transfer_logic(tx, withdrawals, cred) -> Bool {
+  has_key(withdrawals, cred)  // False = token treated as non-programmable
+}
+
+// SAFE — transaction fails immediately if check fails
+fn check_transfer_logic(tx, withdrawals, cred) -> Bool {
+  expect has_key(withdrawals, cred)
+  True
+}
+```
+
+This prevents registered tokens from being silently treated as non-programmable,
+which would allow value to escape a custody system.

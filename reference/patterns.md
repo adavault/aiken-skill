@@ -468,3 +468,106 @@ But requires governance NFT infrastructure and adds complexity.
   should validate incoming migrated UTxOs independently
 - **Test the migration path** — write explicit tests for the Migrate redeemer, including
   failure cases (wrong destination, missing signature, insufficient output value)
+
+## Sorted Linked List (On-Chain Registry)
+
+**Problem:** Need O(1) membership proofs for an on-chain set of registered items
+(e.g., token policies, approved addresses, oracle feeds).
+
+**Solution:** A sorted linked list where each node is a UTxO with an NFT marker
+and inline datum containing `key`, `next`, and payload fields. The list is
+ordered lexicographically by key.
+
+**Confirmed working** — See [adavault/programmable-tokens](https://github.com/adavault/programmable-tokens) registry_mint.
+
+```aiken
+type RegistryNode {
+  key: ByteArray,           // This node's key
+  next: ByteArray,          // Next key in sorted order (#"" = end of list)
+  // ... payload fields
+}
+
+// Origin (sentinel) node: key = #"", next = #"" (or first real key)
+// Empty bytearray is always less than any non-empty bytearray
+```
+
+### Membership Proofs
+
+```aiken
+type Proof {
+  Exists { node_idx: Int }       // Reference input[idx].key == query
+  DoesNotExist { node_idx: Int } // covering.key < query < covering.next
+}
+```
+
+- **Exists:** O(1) — point to the node via reference input index
+- **DoesNotExist:** O(1) — point to the covering node that spans the gap
+
+### Insert Operation
+
+Find the covering node (where `covering.key < new_key < covering.next`),
+spend it, and output two nodes:
+
+```aiken
+// Updated covering: only next pointer changes
+let expected_covering = RegistryNode { ..covering, next: new_key }
+expect updated_covering == expected_covering
+
+// New node: inherits covering.next
+expect new_node.key == new_key
+expect new_node.next == covering.next
+```
+
+### Security Considerations
+
+- **Count registry inputs:** During insert, verify exactly 1 registry node is
+  spent. Otherwise an attacker can spend unrelated nodes alongside a valid insert.
+- **Mint exactly 1 NFT:** `dict.to_pairs(minted) == [Pair(key, 1)]` prevents
+  minting extra tokens or burning existing ones in the same transaction.
+- **Guard spend with mint:** The spend validator can simply check
+  `has_currency_symbol(tx.mint, registry_policy)` — the mint validator
+  handles all complex validation.
+
+## CIP-113 Programmable Token Coordination
+
+**Problem:** Enforce custom transfer rules on every token movement while keeping
+the spending validator cheap (it runs per-input).
+
+**Solution:** A multi-validator architecture using withdraw-zero for transaction-level
+coordination with pluggable transfer logic per token type.
+
+**Confirmed working** — See [adavault/programmable-tokens](https://github.com/adavault/programmable-tokens).
+
+### Architecture
+
+```
+programmable_logic_base (spend)     — O(1) check: is global in withdrawals?
+programmable_logic_global (withdraw) — runs ONCE: sum inputs, check proofs, verify outputs
+transfer_logic (withdraw)           — runs ONCE: token-specific rules (whitelist, limits)
+registry (mint + spend)             — sorted linked list of registered token policies
+```
+
+All programmable tokens share a single payment credential. Ownership is
+determined by per-holder stake credentials (VK or script). This enables
+the global coordinator to process all tokens in one pass.
+
+### Transfer Flow
+
+1. Spend validator checks global coordinator is in withdrawals
+2. Global coordinator sums authorized inputs (each stake cred must sign or be invoked)
+3. For each non-ADA policy, consume a registry proof:
+   - `TokenExists` → verify transfer logic is invoked, track as programmable
+   - `TokenDoesNotExist` → covering node proves non-membership, skip
+4. Verify outputs at programmable address contain >= all programmable tokens
+
+### Key Design Decisions
+
+- **`expect` for security-critical Bool checks:** When `TokenExists` proof is
+  provided, the transfer logic MUST be in withdrawals. Use `expect has_key(...)`
+  not `has_key(...)` as return value — prevents registered tokens from being
+  silently treated as non-programmable.
+- **Skip ADA in proof iteration:** `assets.to_dict(value)` includes ADA under
+  policy `""`. Skip it before matching against proofs.
+- **Balance invariant for third-party actions:** `total_output >= total_input`
+  across ALL outputs at the programmable address, not per-pair. Seized tokens
+  must stay in the system.
