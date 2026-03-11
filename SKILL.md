@@ -6,7 +6,7 @@ description: >
   Triggers on: Aiken, validator, smart contract, Cardano on-chain, Plutus,
   minting policy, spend validator, datum, redeemer, plutus.json, blueprint.
   Covers language syntax, validator patterns, property-based testing,
-  security best practices, and stdlib usage.
+  security best practices, stdlib usage, and off-chain MeshJS integration.
 user-invocable: true
 ---
 
@@ -34,6 +34,7 @@ When asked to write a smart contract:
 4. **Write tests immediately** — unit tests first, then property-based
 5. **Review for security** — check the security patterns in [security.md](reference/security.md)
 6. **Build and verify** — `aiken build` must succeed, `aiken check` must pass
+7. **Write off-chain integration** — build transactions with MeshJS, test on preview testnet (see [offchain.md](reference/offchain.md))
 
 When asked to audit or review a smart contract:
 
@@ -272,6 +273,7 @@ For detailed information, consult:
 - [Standard library](reference/stdlib.md) — key modules and functions
 - [Design patterns](reference/patterns.md) — withdraw-zero trick, UTxO indexers, upgrade/migration, etc.
 - [Gotchas](reference/gotchas.md) — compiler pitfalls, type system surprises, testing patterns
+- [Off-chain integration](reference/offchain.md) — MeshJS transaction building, datum encoding, integration testing
 
 ## Examples
 

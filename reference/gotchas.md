@@ -308,3 +308,92 @@ and {
 ```
 
 Each condition traces independently on failure.
+
+## Off-Chain (MeshJS) Pitfalls
+
+These gotchas apply when writing TypeScript code that builds transactions
+for Aiken validators using MeshJS v1.9.x-beta.
+
+### `"JSON"` format required for all Plutus data
+
+The default Mesh type format for datum, redeemer, and script parameters
+causes "Cannot convert undefined to a BigInt" errors during tx serialization.
+Always pass `"JSON"` as the format argument:
+
+```typescript
+// BAD — default Mesh format, BigInt serialization errors
+txBuilder.txOutInlineDatumValue(datum);
+txBuilder.mintRedeemerValue(redeemer);
+blueprint.paramScript(code, params);
+
+// GOOD — JSON format
+txBuilder.txOutInlineDatumValue(datum, "JSON");
+txBuilder.mintRedeemerValue(redeemer, "JSON");
+blueprint.paramScript(code, params, "JSON");
+```
+
+### `constructor` not `alternative` in JSON format
+
+The JSON format parser checks for a `constructor` key. Using `alternative`
+(which is the Mesh type key) produces "Malformed Plutus data json":
+
+```typescript
+// BAD — "Malformed Plutus data json"
+{ alternative: 0, fields: [...] }
+
+// GOOD
+{ constructor: 0, fields: [...] }
+```
+
+### `complete()` does not sign
+
+`MeshTxBuilder.complete()` only builds the transaction body. You must call
+`completeSigning()` separately — otherwise submission fails with "Some
+signatures are missing":
+
+```typescript
+await txBuilder.signingKey(skey).complete();
+txBuilder.completeSigning();  // ← REQUIRED
+const signedTx = txBuilder.txHex;
+```
+
+### Collateral must be pure ADA
+
+UTxOs containing native tokens cannot serve as collateral. Find a UTxO
+that contains only lovelace:
+
+```typescript
+const collateral = utxos.find((u) =>
+  u.output.amount.length === 1 && u.output.amount[0].unit === "lovelace"
+);
+```
+
+### Enterprise vs base address mismatch
+
+`AppWallet.getPaymentAddress()` returns a base address (with stake key).
+If the funded wallet uses an enterprise address, UTxO lookups fail silently
+(different address = no UTxOs found). Use `getEnterpriseAddress()`.
+
+### Node.js 20 WebSocket polyfill
+
+`OgmiosProvider` uses browser WebSocket API. Node.js 20 lacks it:
+
+```typescript
+import WebSocket from "ws";
+(globalThis as any).WebSocket = WebSocket;
+```
+
+### `toBytes()` returns hex string, not Uint8Array
+
+`Address.toBytes()` returns a hex string. Don't wrap it in
+`Buffer.from(...).toString("hex")` — that double-encodes:
+
+```typescript
+// BAD — double encoding
+const addrBytes = usedAddr.toBytes();
+const keyHash = Buffer.from(addrBytes.slice(1, 29)).toString("hex");
+
+// GOOD — already hex
+const addrHex = usedAddr.toBytes() as unknown as string;
+const keyHash = addrHex.slice(2, 58);
+```

@@ -83,6 +83,7 @@ If the validator takes parameters:
    addresses. Are all required parameters included?
 4. **Parameter encoding** — CBOR encoding of parameters must match what the
    off-chain code supplies. Mismatches produce wrong script addresses silently.
+   See [offchain.md](offchain.md) for MeshJS encoding patterns and common pitfalls.
 
 ### Phase 4: Multi-Validator Interaction
 
