@@ -6,6 +6,9 @@ and integration testing on preview/preprod testnets.
 
 All patterns verified against MeshJS v1.9.x-beta and Aiken v1.1.21.
 
+For working E2E test examples (16 contracts, 45 operations on preview testnet),
+see [adavault/cardano-notary](https://github.com/adavault/cardano-notary) `test/` directory.
+
 ## Provider Setup
 
 ### Ogmios + Kupo (Node Infrastructure)
