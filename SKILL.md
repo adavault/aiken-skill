@@ -310,6 +310,9 @@ Working examples with full test suites (all compiler-validated):
 - [Marketplace](examples/marketplace.md) — NFT listing/buying/cancelling with payment verification
 - [DAO Vote](examples/dao-vote.md) — token-weighted governance voting with lock-until-deadline
 
+**Phase 7 — Novel Patterns:**
+- [Notary](examples/notary.md) — proof-of-existence document notarization (no Cardano equivalent exists)
+
 ## Production References
 
 Open-source Aiken contracts for studying production-scale implementations.
