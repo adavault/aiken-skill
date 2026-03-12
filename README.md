@@ -26,20 +26,20 @@ Copy into your project's `.claude/skills/` directory:
 ```bash
 # From your Aiken project root
 mkdir -p .claude/skills
-cp -r /path/to/aiken-skill .claude/skills/aiken-smart-contract
+cp -r /path/to/cardano-skill .claude/skills/aiken-smart-contract
 ```
 
 Or clone directly:
 
 ```bash
 mkdir -p .claude/skills
-git clone https://github.com/adavault/aiken-skill.git .claude/skills/aiken-smart-contract
+git clone https://github.com/ADAvault/cardano-skill.git .claude/skills/aiken-smart-contract
 ```
 
 ### Personal (All Projects)
 
 ```bash
-cp -r /path/to/aiken-skill ~/.claude/skills/aiken-smart-contract
+cp -r /path/to/cardano-skill ~/.claude/skills/aiken-smart-contract
 ```
 
 ## Usage
