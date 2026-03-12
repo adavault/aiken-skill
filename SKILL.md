@@ -274,6 +274,7 @@ For detailed information, consult:
 - [Design patterns](reference/patterns.md) — withdraw-zero trick, UTxO indexers, upgrade/migration, etc.
 - [Gotchas](reference/gotchas.md) — compiler pitfalls, type system surprises, testing patterns
 - [Off-chain integration](reference/offchain.md) — MeshJS transaction building, datum encoding, integration testing
+- [CIP-113 Programmable Tokens](reference/cip113.md) — multi-validator architecture, registry, transfer flows, E2E testing
 
 ## Examples
 

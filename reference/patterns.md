@@ -536,15 +536,17 @@ the spending validator cheap (it runs per-input).
 **Solution:** A multi-validator architecture using withdraw-zero for transaction-level
 coordination with pluggable transfer logic per token type.
 
-**Confirmed working** — See [adavault/programmable-tokens](https://github.com/adavault/programmable-tokens).
+**Confirmed working on preview testnet** — See
+[adavault/programmable-tokens](https://github.com/adavault/programmable-tokens).
+Full reference: [`reference/cip113.md`](cip113.md).
 
 ### Architecture
 
 ```
-programmable_logic_base (spend)     — O(1) check: is global in withdrawals?
+programmable_logic_base (spend)      — O(1) check: is global in withdrawals?
 programmable_logic_global (withdraw) — runs ONCE: sum inputs, check proofs, verify outputs
-transfer_logic (withdraw)           — runs ONCE: token-specific rules (whitelist, limits)
-registry (mint + spend)             — sorted linked list of registered token policies
+transfer_logic (withdraw)            — runs ONCE: token-specific rules (whitelist, limits)
+registry (mint + spend)              — sorted linked list of registered token policies
 ```
 
 All programmable tokens share a single payment credential. Ownership is
@@ -571,3 +573,8 @@ the global coordinator to process all tokens in one pass.
 - **Balance invariant for third-party actions:** `total_output >= total_input`
   across ALL outputs at the programmable address, not per-pair. Seized tokens
   must stay in the system.
+- **Manual exUnits for 4+ validators:** Evaluator defaults to 7M mem/redeemer,
+  exceeding the 16.5M protocol limit with 3+ scripts. Use explicit budgets.
+
+See [`reference/cip113.md`](cip113.md) for the full architecture, all
+transaction flows, off-chain code, and E2E testing approach.
