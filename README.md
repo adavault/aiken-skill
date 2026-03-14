@@ -4,6 +4,8 @@ A [Claude Code skill](https://code.claude.com/docs/en/skills) for writing, testi
 
 Following the [Agent Skills](https://agentskills.io) open standard — works with Claude Code, Cursor, Gemini CLI, VS Code Copilot, and 30+ other AI coding tools.
 
+> **Important:** This skill accelerates smart contract development but does not replace professional security auditing. Any smart contract intended for mainnet deployment with real funds should undergo a professional audit before launch. AI-generated code — even with this skill — can contain subtle vulnerabilities.
+
 ## Summary
 
 | Metric | Count |
