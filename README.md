@@ -174,6 +174,33 @@ PRs welcome — especially from SPOs, Aiken developers, and Cardano builders. Ar
 - Corrections to existing reference material
 - Off-chain integration patterns for other frameworks
 
+## Key Findings from Validation
+
+Compiling all examples and running E2E tests against real infrastructure uncovered patterns not documented elsewhere:
+
+- **`tx.inputs` are sorted lexicographically** — redeemer indices (UTxO indexer pattern) must match sorted order, not insertion order
+- **`invalidBefore` needs 180s safety margin** — ledger tip can lag 60-200s behind wall clock on preview (Poisson block distribution)
+- **Conway registration is permissionless** — `registerStakeCertificate()` needs no script witness, redeemer, or collateral
+- **Multi-handler validators share script hash** — policy ID = spend script hash for the same compiled code
+- **Aiken `else` handler blocks unmatched purposes** — can't deregister a staking cred if the script only has a `withdraw` handler
+
+All findings are documented in [gotchas.md](reference/gotchas.md) and in each example's Key Concepts section.
+
+## Sources
+
+Built from:
+
+- **Aiken documentation and standard library** (v1.1.21, stdlib v3.0.0)
+- **Production Cardano projects** — Minswap, SundaeSwap, Lenfi, SpaceBudz Nebula, Anastasia Labs
+- **MeshJS SDK** — off-chain transaction building and testing patterns
+- **Cardano Improvement Proposals** — CIP-31, CIP-33, CIP-68, CIP-113
+- **Compiler validation** — 249 tests passing against Aiken v1.1.21 with Plutus V3
+- **Preview testnet deployment** — 61 E2E operations across 21 contracts via [cardano-notary](https://github.com/ADAvault/cardano-notary) and [programmable-tokens](https://github.com/ADAvault/programmable-tokens)
+
+## Companion Skill
+
+See also: [midnight-skill](https://github.com/ADAvault/midnight-skill) — the equivalent skill for Compact smart contracts on Midnight (privacy, ZK proofs, shielded state).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
