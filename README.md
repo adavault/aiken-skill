@@ -199,9 +199,10 @@ Built from:
 - **Compiler validation** — 249 tests passing against Aiken v1.1.21 with Plutus V3
 - **Preview testnet deployment** — 61 E2E operations across 21 contracts via [cardano-notary](https://github.com/ADAvault/cardano-notary) and [programmable-tokens](https://github.com/ADAvault/programmable-tokens)
 
-## Companion Skill
+## Companion Skills
 
-See also: [midnight-skill](https://github.com/ADAvault/midnight-skill) — the equivalent skill for Compact smart contracts on Midnight (privacy, ZK proofs, shielded state).
+- [cardano-offchain-skill](https://github.com/ADAvault/cardano-offchain-skill) — CIP-30 wallets, MeshJS transactions, Ogmios/Kupo, Playwright testing (off-chain)
+- [midnight-skill](https://github.com/ADAvault/midnight-skill) — Compact smart contracts on Midnight (privacy, ZK proofs, shielded state)
 
 ## License
 
