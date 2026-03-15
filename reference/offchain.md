@@ -1,14 +1,20 @@
 # Off-Chain Integration with MeshJS
 
 Building transactions that interact with Aiken smart contracts. Covers
-MeshJS setup, transaction building, datum/redeemer encoding, signing,
-and integration testing on preview/preprod testnets.
+server-side MeshJS setup (AppWallet, MeshTxBuilder), transaction building,
+datum/redeemer encoding, signing, and integration testing on preview/preprod.
+
+> **Companion skill:** For browser-side wallet integration (CIP-30, BrowserWallet,
+> auto-reconnect, Playwright testing), see
+> [cardano-offchain-skill](https://github.com/ADAvault/cardano-offchain-skill).
+> This document focuses on server-side / CLI transaction building against
+> Aiken validators.
 
 All patterns verified against MeshJS v1.9.x-beta and Aiken v1.1.21.
 
 For working E2E test examples, see:
-- [adavault/cardano-notary](https://github.com/adavault/cardano-notary) `test/` — 16 contracts, 45 operations on preview
-- [adavault/programmable-tokens](https://github.com/adavault/programmable-tokens) `test/` — CIP-113 full lifecycle (12 validators, 4 E2E phases)
+- [adavault/cardano-notary](https://github.com/adavault/cardano-notary) `test/` — 21 contracts, 61 operations on preview
+- [adavault/programmable-tokens](https://github.com/adavault/programmable-tokens) `test/` — CIP-113 full lifecycle (12 validators, 5 E2E phases)
 
 ## Provider Setup
 
@@ -677,6 +683,8 @@ verify and burn can run independently.
 | Couldn't find value information | UTxO not indexed by Kupo | Pass all 5 `.txIn()` params including `scriptSize: 0` |
 
 ## Kupo Runtime Pattern Management
+
+> **Full coverage:** See [cardano-offchain-skill/reference/infrastructure.md](https://github.com/ADAvault/cardano-offchain-skill/blob/main/reference/infrastructure.md) for complete Kupo/Ogmios infrastructure patterns including Docker deployment, HAProxy failover, and troubleshooting.
 
 When deploying new contracts, register their script credentials with Kupo via
 the HTTP API (no restart needed):
