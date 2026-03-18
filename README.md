@@ -1,6 +1,6 @@
 # Aiken Smart Contract Skill
 
-A [Claude Code skill](https://code.claude.com/docs/en/skills) for writing, testing, and auditing [Aiken](https://aiken-lang.org) smart contracts on Cardano.
+A [Claude Code skill](https://code.claude.com/docs/en/skills) for writing, testing, and auditing [Aiken](https://aiken-lang.org) smart contracts on [Cardano](https://cardano.org). This project extends the Cardano ecosystem with additional developer tooling.
 
 Following the [Agent Skills](https://agentskills.io) open standard — works with Claude Code, Cursor, Gemini CLI, VS Code Copilot, and 30+ other AI coding tools.
 
